@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="A playful turn-based Viking strategy game for one to four local players."
+    />
+    <title>Viking Raiders Returns — Prototype</title>
+  </head>
+  <body>
+    <div id="app">
+      <header class="masthead">
+        <div>
+          <p class="eyebrow">Playable rules prototype</p>
+          <h1>Viking Raiders <span>Returns</span></h1>
+        </div>
+        <p class="tagline">Raise a crew. Cross the fjord. Borrow a castle.</p>
+      </header>
+
+      <main>
+        <section id="setup" class="setup-card" aria-labelledby="setup-title">
+          <div class="setup-copy">
+            <p class="eyebrow">War council</p>
+            <h2 id="setup-title">Choose your raiders</h2>
+            <p>
+              Use two to four factions. Every faction can be controlled by a person or by a
+              computer opponent with its own difficulty.
+            </p>
+          </div>
+          <div id="player-slots" class="player-slots"></div>
+          <p class="difficulty-guide">
+            Very Easy wanders cheerfully; Easy understands basic roles; Normal plans a full turn;
+            Hard coordinates attacks and defence; Expert retains longer campaign plans. All receive
+            identical gold, units and purchase opportunities.
+          </p>
+          <label class="ai-pace-control" for="ai-pace">
+            <span>Computer turn pace</span>
+            <select id="ai-pace">
+              <option value="relaxed">Relaxed — easier to follow</option>
+              <option value="normal" selected>Normal</option>
+              <option value="brisk">Brisk — less waiting</option>
+              <option value="rapid">Rapid — almost instant</option>
+            </select>
+            <small>Changes animation speed only; computer strength stays exactly the same.</small>
+          </label>
+          <div class="setup-toggles" aria-label="Match options">
+            <label class="deck-toggle" for="event-deck-enabled">
+              <span class="deck-toggle-copy">
+                <strong>Saga event cards</strong>
+                <small>Draw a surprise card at the end of every turn.</small>
+              </span>
+              <span class="toggle-switch">
+                <input id="event-deck-enabled" type="checkbox" checked />
+                <span aria-hidden="true"></span>
+              </span>
+            </label>
+            <label class="deck-toggle" for="random-starting-player">
+              <span class="deck-toggle-copy">
+                <strong>Random starting player</strong>
+                <small>Any participating faction may take the first turn.</small>
+              </span>
+              <span class="toggle-switch">
+                <input id="random-starting-player" type="checkbox" checked />
+                <span aria-hidden="true"></span>
+              </span>
+            </label>
+            <label class="deck-toggle" for="random-player-order">
+              <span class="deck-toggle-copy">
+                <strong>Random player order</strong>
+                <small>Shuffle the fixed turn sequence once for this match.</small>
+              </span>
+              <span class="toggle-switch">
+                <input id="random-player-order" type="checkbox" checked />
+                <span aria-hidden="true"></span>
+              </span>
+            </label>
+            <label class="deck-toggle" for="sound-effects-enabled">
+              <span class="deck-toggle-copy">
+                <strong>Sound effects</strong>
+                <small>Play Catapult release, flight and impact sounds.</small>
+              </span>
+              <span class="toggle-switch">
+                <input id="sound-effects-enabled" type="checkbox" checked />
+                <span aria-hidden="true"></span>
+              </span>
+            </label>
+            <label class="deck-toggle" for="winter-enabled">
+              <span class="deck-toggle-copy">
+                <strong>Winter Is Coming</strong>
+                <small>Gradually freeze the fjord sometime after rounds 4–10.</small>
+              </span>
+              <span class="toggle-switch">
+                <input id="winter-enabled" type="checkbox" checked />
+                <span aria-hidden="true"></span>
+              </span>
+            </label>
+          </div>
+          <div class="setup-footer">
+            <p id="setup-message" role="status">
+              Blue is ready for you. Red has volunteered to be the opposition.
+            </p>
+            <button id="start-game" class="primary-button" type="button">
+              Sound the horn
+            </button>
+          </div>
+        </section>
+
+        <section id="game-shell" class="game-shell" aria-label="Game board" hidden>
+          <div class="board-column">
+            <div class="board-toolbar">
+              <div>
+                <p class="eyebrow">The fjord</p>
+                <p id="round-label" class="round-label">Round 1</p>
+              </div>
+              <div id="turn-badge" class="turn-badge">Blue turn</div>
+            </div>
+            <div id="game-canvas" class="game-canvas" aria-label="Interactive battlefield"></div>
+            <p id="board-help" class="board-help">
+              Select one of your units, then choose a highlighted destination. Units travel in
+              straight lines for up to nine spaces and stop at the first object.
+            </p>
+          </div>
+
+          <aside class="command-panel" aria-label="Turn controls">
+            <section id="active-chief" class="chief-card"></section>
+
+            <section class="panel-section">
+              <div class="section-heading">
+                <h2>War chest</h2>
+                <strong id="gold-value">0 gold</strong>
+              </div>
+              <div class="purchase-grid">
+                <button class="purchase-button" data-unit="soldier" type="button">
+                  <span class="purchase-icon">♟</span>
+                  <span><b>Soldier</b><small>2 gold</small></span>
+                </button>
+                <button class="purchase-button" data-unit="longboat" type="button">
+                  <span class="purchase-icon">⌁</span>
+                  <span><b>Longboat</b><small>5 gold</small></span>
+                </button>
+                <button class="purchase-button" data-unit="catapult" type="button">
+                  <span class="purchase-icon">◆</span>
+                  <span><b>Catapult</b><small>8 gold</small></span>
+                </button>
+              </div>
+            </section>
+
+            <section class="panel-section selected-section">
+              <h2>Selected unit</h2>
+              <p id="selected-unit">Choose a unit on the board.</p>
+              <button id="fire-catapult" class="fire-button" type="button" hidden>
+                Fire catapult
+              </button>
+              <button id="disembark-viking" class="fire-button boat-button" type="button" hidden>
+                Disembark Viking
+              </button>
+            </section>
+
+            <button id="end-turn" class="end-turn-button" type="button">End turn</button>
+
+            <section class="panel-section log-section">
+              <h2>Saga so far</h2>
+              <ol id="game-log" class="game-log" aria-live="polite"></ol>
+            </section>
+
+            <button id="new-game" class="text-button" type="button">Return to war council</button>
+          </aside>
+        </section>
+
+        <section id="event-reveal" class="event-reveal" role="dialog" aria-modal="true" aria-labelledby="event-title" hidden>
+          <div class="event-card">
+            <p class="eyebrow">Saga card drawn</p>
+            <div id="event-symbol" class="event-symbol" aria-hidden="true">✦</div>
+            <h2 id="event-title">Royal Ransom</h2>
+            <p id="event-description" class="event-description"></p>
+            <p id="event-outcome" class="event-outcome"></p>
+            <p id="event-deck-count" class="event-deck-count"></p>
+            <button id="event-continue" class="primary-button" type="button">Continue the saga</button>
+          </div>
+        </section>
+      </main>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
+

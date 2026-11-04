@@ -1,0 +1,15 @@
+game/node_modules/
+game/dist/
+game/coverage/
+*.log
+
+# Historical source material is retained locally but not committed with the game.
+references/*
+!references/README.md
+
+# Local editor and operating-system clutter.
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+

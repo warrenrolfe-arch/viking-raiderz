@@ -1,0 +1,21 @@
+{
+  "name": "viking-raiders-returns",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "test": "vitest run tests",
+    "benchmark": "vitest run benchmark/runner.test.ts --reporter=verbose"
+  },
+  "dependencies": {
+    "phaser": "latest"
+  },
+  "devDependencies": {
+    "typescript": "latest",
+    "vite": "latest",
+    "vitest": "latest"
+  }
+}
+
