@@ -2,6 +2,7 @@ import type {
   GameState,
   DrinkingHorn,
   EventCardId,
+  EventDraw,
   GameOptions,
   Player,
   PlayerId,
@@ -544,6 +545,8 @@ export function createGame(
     eventSequence: 0,
     aiPlans: {},
     activePlayerIndex: 0,
+    turnPhase: "movement",
+    nextUnitSequence: 1,
     round: 1,
     seed: seed >>> 0,
     log: [
@@ -660,7 +663,9 @@ function createDrinkingHorns(state: GameState, seed: number): void {
 }
 
 function nextUnitId(state: GameState, playerId: PlayerId, type: UnitType): string {
-  return `${playerId}-${type}-${state.units.length + 1}`;
+  const sequence = state.nextUnitSequence;
+  state.nextUnitSequence += 1;
+  return `${playerId}-${type}-${sequence}`;
 }
 
 export function activePlayer(state: GameState): Player {
@@ -829,8 +834,10 @@ function movementObstacleAt(state: GameState, position: Position): "castle" | "t
 
 export function getLegalMoves(state: GameState, unitId: string): Position[] {
   const unit = state.units.find((candidate) => candidate.id === unitId);
-  if (!unit || unit.embarkedOn || unit.moved || state.winnerId) return [];
+  if (!unit || unit.embarkedOn || unit.moved || state.winnerId || state.turnPhase !== "movement") return [];
   if (unit.playerId !== activePlayer(state).id) return [];
+  const pendingCatapult = getPendingCatapult(state);
+  if (pendingCatapult && pendingCatapult.id !== unit.id) return [];
 
   const rule = UNIT_RULES[unit.type];
   const moves: Position[] = [];
@@ -996,13 +1003,27 @@ const BENIGN_SAGA_OUTCOMES: Partial<Record<EventCardId, string>> = {
   "axe-shaped-cloud": "Nothing changes. An axe-shaped cloud drifts past without attacking anyone.",
 };
 
-function resolveEventCard(state: GameState, player: Player, cardId: EventCardId): string | undefined {
+type ResolvedEventCard = Pick<EventDraw, "outcome" | "effects">;
+
+function resolveEventCard(state: GameState, player: Player, cardId: EventCardId): ResolvedEventCard | undefined {
   const benignOutcome = BENIGN_SAGA_OUTCOMES[cardId];
-  if (benignOutcome) return benignOutcome;
+  if (benignOutcome) {
+    return {
+      outcome: benignOutcome,
+      effects: [{
+        kind: "benign",
+        position: { x: Math.floor(state.width / 2), y: Math.floor(state.height / 2) },
+        label: "Nothing changes",
+      }],
+    };
+  }
 
   if (cardId === "royal-ransom") {
     player.gold += 8;
-    return `${player.name} receives 8 gold.`;
+    return {
+      outcome: `${player.name} receives 8 gold.`,
+      effects: [{ kind: "gold", position: { ...player.castle }, label: "+8 gold", amount: 8 }],
+    };
   }
 
   if (cardId === "treasure-hunter") {
@@ -1012,7 +1033,10 @@ function resolveEventCard(state: GameState, player: Player, cardId: EventCardId)
     if (!chest) return undefined;
     const gained = Math.min(20, 50 - chest.value);
     chest.value += gained;
-    return `A nearby treasure chest gains ${gained} gold and is now worth ${chest.value}.`;
+    return {
+      outcome: `A nearby treasure chest gains ${gained} gold and is now worth ${chest.value}.`,
+      effects: [{ kind: "treasure", entityId: chest.id, position: { ...chest.position }, label: `+${gained} gold`, amount: gained }],
+    };
   }
 
   if (cardId === "veterans-tale") {
@@ -1021,7 +1045,10 @@ function resolveEventCard(state: GameState, player: Player, cardId: EventCardId)
       .sort((a, b) => eventDistance(a.position, player.castle) - eventDistance(b.position, player.castle))[0];
     if (!soldier) return undefined;
     soldier.veteran = true;
-    return `A loyal Soldier is promoted to Veteran.`;
+    return {
+      outcome: `A loyal Soldier is promoted to Veteran.`,
+      effects: [{ kind: "unit", unitId: soldier.id, position: { ...soldier.position }, label: "Promoted to Veteran!" }],
+    };
   }
 
   if (cardId === "sobering-thought") {
@@ -1030,7 +1057,10 @@ function resolveEventCard(state: GameState, player: Player, cardId: EventCardId)
       .sort((a, b) => eventDistance(a.position, player.castle) - eventDistance(b.position, player.castle))[0];
     if (!soldier) return undefined;
     soldier.drunk = false;
-    return `The nearest drunk Viking sobers up.`;
+    return {
+      outcome: `The nearest drunk Viking sobers up.`,
+      effects: [{ kind: "unit", unitId: soldier.id, position: { ...soldier.position }, label: "Sobered up!" }],
+    };
   }
 
   if (cardId === "ale-delivery") {
@@ -1039,23 +1069,34 @@ function resolveEventCard(state: GameState, player: Player, cardId: EventCardId)
       .sort((a, b) => eventDistance(a.position, player.castle) - eventDistance(b.position, player.castle))[0];
     const position = enemy && eventOpenPositionsNear(state, enemy.position, 2)[0];
     if (!enemy || !position) return undefined;
-    state.drinkingHorns.push({ id: `event-horn-${state.eventSequence + 1}`, position });
-    return `A fresh drinking horn appears near an enemy Viking.`;
+    const hornId = `event-horn-${state.eventSequence + 1}`;
+    state.drinkingHorns.push({ id: hornId, position });
+    return {
+      outcome: `A fresh drinking horn appears near an enemy Viking.`,
+      effects: [{ kind: "horn", entityId: hornId, position: { ...position }, label: "Ale delivered!" }],
+    };
   }
 
   if (cardId === "hidden-hoard") {
     const positions = eventOpenPositionsAtLeast(state, player.castle, 5);
     const position = positions[Math.floor(random(state) * positions.length)];
     if (!position) return undefined;
-    state.treasures.push({ id: `event-chest-${state.eventSequence + 1}`, value: 10, position });
-    return `A 10-gold chest is hidden at least five squares from ${player.name}'s castle.`;
+    const chestId = `event-chest-${state.eventSequence + 1}`;
+    state.treasures.push({ id: chestId, value: 10, position });
+    return {
+      outcome: `A 10-gold chest is hidden at least five squares from ${player.name}'s castle.`,
+      effects: [{ kind: "treasure", entityId: chestId, position: { ...position }, label: "10-gold chest appears!", amount: 10 }],
+    };
   }
 
   if (cardId === "army-upkeep") {
     if (player.gold <= 0) return undefined;
     const paid = Math.min(10, player.gold);
     player.gold -= paid;
-    return `${player.name} pays ${paid} gold in army upkeep.`;
+    return {
+      outcome: `${player.name} pays ${paid} gold in army upkeep.`,
+      effects: [{ kind: "gold", position: { ...player.castle }, label: `-${paid} gold`, amount: -paid }],
+    };
   }
 
   if (cardId === "harbour-dues") {
@@ -1063,7 +1104,14 @@ function resolveEventCard(state: GameState, player: Player, cardId: EventCardId)
     if (!hasLongboat || player.gold <= 0) return undefined;
     const paid = Math.min(5, player.gold);
     player.gold -= paid;
-    return `${player.name} pays ${paid} gold in harbour dues.`;
+    const boats = state.units.filter((unit) => unit.playerId === player.id && unit.type === "longboat");
+    return {
+      outcome: `${player.name} pays ${paid} gold in harbour dues.`,
+      effects: [
+        { kind: "gold", position: { ...player.castle }, label: `-${paid} gold`, amount: -paid },
+        ...boats.map((boat) => ({ kind: "unit" as const, unitId: boat.id, position: { ...boat.position }, label: "Harbour dues" })),
+      ],
+    };
   }
 
   if (cardId === "catapult-repairs") {
@@ -1071,7 +1119,14 @@ function resolveEventCard(state: GameState, player: Player, cardId: EventCardId)
     if (!hasCatapult || player.gold <= 0) return undefined;
     const paid = Math.min(4, player.gold);
     player.gold -= paid;
-    return `${player.name} pays ${paid} gold for catapult repairs.`;
+    const catapults = state.units.filter((unit) => unit.playerId === player.id && unit.type === "catapult");
+    return {
+      outcome: `${player.name} pays ${paid} gold for catapult repairs.`,
+      effects: [
+        { kind: "gold", position: { ...player.castle }, label: `-${paid} gold`, amount: -paid },
+        ...catapults.map((catapult) => ({ kind: "unit" as const, unitId: catapult.id, position: { ...catapult.position }, label: "Repairs paid" })),
+      ],
+    };
   }
 
   if (cardId === "the-persuader") {
@@ -1080,11 +1135,21 @@ function resolveEventCard(state: GameState, player: Player, cardId: EventCardId)
       .sort((a, b) => eventDistance(a.position, player.castle) - eventDistance(b.position, player.castle))
       .slice(0, 2);
     if (targets.length === 0) return undefined;
+    const effects = targets.map((target) => ({
+      kind: "unit" as const,
+      unitId: target.id,
+      position: { ...target.position },
+      label: `Joined ${player.name}`,
+      previousPlayerId: target.playerId,
+    }));
     for (const target of targets) {
       target.playerId = player.id;
       target.drunk = false;
     }
-    return `${targets.length} enemy Viking${targets.length === 1 ? " is" : "s are"} persuaded to join ${player.name}.`;
+    return {
+      outcome: `${targets.length} enemy Viking${targets.length === 1 ? " is" : "s are"} persuaded to join ${player.name}.`,
+      effects,
+    };
   }
 
   const destinations = eventOpenPositionsNear(state, player.castle, 1, true);
@@ -1092,11 +1157,22 @@ function resolveEventCard(state: GameState, player: Player, cardId: EventCardId)
     .filter((unit) => unit.playerId === player.id && unit.type === "soldier" && !unit.embarkedOn && eventDistance(unit.position, player.castle) > 1)
     .sort((a, b) => eventDistance(b.position, player.castle) - eventDistance(a.position, player.castle))[0];
   if (!soldier || destinations.length === 0) return undefined;
+  const from = { ...soldier.position };
   soldier.position = { ...destinations[0]! };
   const banked = bankTreasureAtHome(state, soldier);
-  return banked
-    ? `A distant Viking emerges beside ${player.name}'s castle and banks ${banked} gold.`
-    : `A distant Viking emerges beside ${player.name}'s castle.`;
+  return {
+    outcome: banked
+      ? `A distant Viking emerges beside ${player.name}'s castle and banks ${banked} gold.`
+      : `A distant Viking emerges beside ${player.name}'s castle.`,
+    effects: [{
+      kind: "unit",
+      unitId: soldier.id,
+      from,
+      position: { ...soldier.position },
+      label: banked ? `Called home — ${banked} gold banked!` : "Called home!",
+      amount: banked || undefined,
+    }],
+  };
 }
 
 /** Draw one resolving card, skipping unavailable effects without breaking the deck cycle. */
@@ -1114,12 +1190,12 @@ export function drawEndTurnEvent(state: GameState, playerId: PlayerId) {
   for (let index = 0; index < cardsToCheck; index += 1) {
     const cardId = state.eventDeck.pop();
     if (!cardId) break;
-    const outcome = resolveEventCard(state, player, cardId);
+    const resolution = resolveEventCard(state, player, cardId);
     state.eventDiscard.push(cardId);
-    if (!outcome) continue;
+    if (!resolution) continue;
     state.eventSequence += 1;
-    state.lastEvent = { sequence: state.eventSequence, cardId, playerId, outcome };
-    state.log.unshift(`${player.name} draws a saga card: ${outcome}`);
+    state.lastEvent = { sequence: state.eventSequence, cardId, playerId, ...resolution };
+    state.log.unshift(`${player.name} draws a saga card: ${resolution.outcome}`);
     return state.lastEvent;
   }
   return undefined;
@@ -1380,6 +1456,7 @@ function disembarkCellsForBoat(state: GameState, boat: Unit): Position[] {
 }
 
 export function getDisembarkCells(state: GameState, boatId: string): Position[] {
+  if (state.turnPhase !== "movement" || getPendingCatapult(state)) return [];
   const boat = state.units.find((unit) => unit.id === boatId && unit.type === "longboat");
   if (!boat || boat.playerId !== activePlayer(state).id || longboatPassengers(state, boatId).length === 0) return [];
   return disembarkCellsForBoat(state, boat);
@@ -1430,11 +1507,30 @@ function catapultCanFire(state: GameState, unitId: string): Unit | undefined {
     catapult.type !== "catapult" ||
     catapult.fired ||
     catapult.playerId !== activePlayer(state).id ||
-    state.winnerId
+    state.winnerId ||
+    state.turnPhase !== "movement"
   ) {
     return undefined;
   }
   return catapult;
+}
+
+export function getPendingCatapult(state: GameState): Unit | undefined {
+  const playerId = activePlayer(state).id;
+  return state.units.find(
+    (unit) => unit.playerId === playerId && unit.type === "catapult" && unit.pendingFireAfterMove,
+  );
+}
+
+/** Explicitly decline the compulsory firing opportunity after moving. */
+export function skipPendingCatapultFire(state: GameState, unitId: string): boolean {
+  if (state.turnPhase !== "movement") return false;
+  const catapult = getPendingCatapult(state);
+  if (!catapult || catapult.id !== unitId) return false;
+  catapult.pendingFireAfterMove = false;
+  catapult.fired = true;
+  state.log.unshift(`${capitalize(catapult.playerId)}'s catapult holds its fire.`);
+  return true;
 }
 
 export function forfeitPendingCatapultFire(state: GameState, exceptUnitId?: string): void {
@@ -1578,6 +1674,7 @@ export function canBuyUnit(state: GameState, playerId: PlayerId, type: UnitType)
     player &&
       !player.eliminated &&
       activePlayer(state).id === playerId &&
+      state.turnPhase === "purchase" &&
       player.gold >= UNIT_RULES[type].cost &&
       purchasePositions(state, player, type).length > 0,
   );
@@ -1603,8 +1700,16 @@ export function buyUnit(state: GameState, playerId: PlayerId, type: UnitType): b
   return true;
 }
 
-export function endTurn(state: GameState): void {
-  if (state.winnerId) return;
+/** Commit all movement and combat before opening the castle market. */
+export function completeManoeuvres(state: GameState): boolean {
+  if (state.winnerId || state.turnPhase !== "movement" || getPendingCatapult(state)) return false;
+  state.turnPhase = "purchase";
+  state.log.unshift(`${activePlayer(state).name} completes Viking manoeuvres and opens the war chest.`);
+  return true;
+}
+
+export function endTurn(state: GameState): boolean {
+  if (state.winnerId || state.turnPhase !== "purchase") return false;
   forfeitPendingCatapultFire(state);
   const endingPlayer = activePlayer(state);
   // A carrier does not need to step away and back again. This also repairs a
@@ -1623,6 +1728,7 @@ export function endTurn(state: GameState): void {
     advanceWinter(state, completedRound);
   }
   state.activePlayerIndex = nextIndex;
+  state.turnPhase = "movement";
   const nextPlayer = activePlayer(state);
   bankWaitingTreasure(state, nextPlayer.id);
   nextPlayer.gold += TURN_INCOME;
@@ -1634,6 +1740,7 @@ export function endTurn(state: GameState): void {
     }
   }
   state.log.unshift(`${nextPlayer.name} begins a turn and collects ${TURN_INCOME} gold.`);
+  return true;
 }
 
 /** Advance at most one north-to-south ice band after every faction has moved. */

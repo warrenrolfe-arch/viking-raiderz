@@ -6,6 +6,7 @@ import {
   buyUnit,
   canBuyUnit,
   carriedTreasure,
+  completeManoeuvres,
   createGame,
   disembarkSoldier,
   drawEndTurnEvent,
@@ -24,6 +25,7 @@ import {
   moveUnit,
   moveDrunkSoldier,
   positionKey,
+  skipPendingCatapultFire,
   TURN_INCOME,
   UNIT_RULES,
   WINTER_EARLIEST_ROUND,
@@ -57,6 +59,11 @@ function testCatapult(state: GameState, playerId: PlayerId): Unit {
   };
 }
 
+function finishTurn(state: GameState): void {
+  expect(completeManoeuvres(state)).toBe(true);
+  expect(endTurn(state)).toBe(true);
+}
+
 describe("game rules", () => {
   it("creates the enlarged board and requested players", () => {
     const state = createGame(setups);
@@ -88,7 +95,7 @@ describe("game rules", () => {
     expect(state.eventDeckEnabled).toBe(false);
     expect(state.eventDeck).toEqual([]);
     expect(drawEndTurnEvent(state, endingPlayer.id)).toBeUndefined();
-    endTurn(state);
+    finishTurn(state);
     expect(state.lastEvent).toBeUndefined();
     expect(state.eventDeck).toEqual([]);
   });
@@ -112,9 +119,9 @@ describe("game rules", () => {
     state.round = 4;
     expect(WINTER_PHASES).toBe(6);
 
-    endTurn(state);
+    finishTurn(state);
     expect(state.winterPhase).toBe(0);
-    endTurn(state);
+    finishTurn(state);
     expect(state.winterPhase).toBe(1);
 
     const firstBoundary = Math.ceil(state.height / WINTER_PHASES);
@@ -126,9 +133,9 @@ describe("game rules", () => {
     )).toBe(true);
 
     for (let phase = 2; phase <= WINTER_PHASES; phase += 1) {
-      endTurn(state);
+      finishTurn(state);
       expect(state.winterPhase).toBe(phase - 1);
-      endTurn(state);
+      finishTurn(state);
       expect(state.winterPhase).toBe(phase);
     }
     expect(originalWater.every(
@@ -229,7 +236,7 @@ describe("game rules", () => {
     expect(first.randomPlayerOrder).toBe(true);
     expect(first.log[0]).toContain("Order:");
 
-    for (let turn = 0; turn < first.players.length; turn += 1) endTurn(first);
+    for (let turn = 0; turn < first.players.length; turn += 1) finishTurn(first);
     expect(first.players.map((player) => player.id)).toEqual(initialOrder);
     expect(activePlayer(first).id).toBe(initialOrder[0]);
 
@@ -774,6 +781,9 @@ describe("game rules", () => {
     catapult.moved = false;
     catapult.fired = false;
     expect(moveUnit(state, catapult.id, { x: 10, y: 10 })).toBe(true);
+    expect(moveUnit(state, soldier.id, { x: 6, y: 5 })).toBe(false);
+    expect(completeManoeuvres(state)).toBe(false);
+    expect(skipPendingCatapultFire(state, catapult.id)).toBe(true);
     expect(moveUnit(state, soldier.id, { x: 6, y: 5 })).toBe(true);
     expect(catapult.pendingFireAfterMove).toBe(false);
     expect(catapult.fired).toBe(true);
@@ -911,11 +921,45 @@ describe("game rules", () => {
   it("purchases units with gold", () => {
     const state = createGame(setups);
     const goldBefore = activePlayer(state).gold;
+    const startingSoldier = state.units.find((unit) => unit.playerId === "blue" && unit.type === "soldier")!;
+    expect(state.turnPhase).toBe("movement");
+    expect(endTurn(state)).toBe(false);
+    expect(buyUnit(state, "blue", "soldier")).toBe(false);
+    expect(completeManoeuvres(state)).toBe(true);
+    expect(state.turnPhase).toBe("purchase");
+    expect(getLegalMoves(state, startingSoldier.id)).toEqual([]);
     expect(buyUnit(state, "blue", "soldier")).toBe(true);
     expect(activePlayer(state).gold).toBe(goldBefore - 2);
     const hired = state.units[state.units.length - 1]!;
     const castle = activePlayer(state).castle;
     expect(Math.max(Math.abs(hired.position.x - castle.x), Math.abs(hired.position.y - castle.y))).toBe(1);
+    expect(endTurn(state)).toBe(true);
+    expect(state.turnPhase).toBe("movement");
+    expect(activePlayer(state).id).toBe("red");
+  });
+
+  it("never reuses a surviving treasure carrier's unit identifier after casualties", () => {
+    const state = createGame(setups);
+    const survivor = state.units.find(
+      (unit) => unit.playerId === "blue" && unit.type === "soldier",
+    )!;
+    const originalId = survivor.id;
+    state.units = [survivor];
+    state.treasures = [{
+      id: "identity-chest",
+      value: 30,
+      position: { ...survivor.position },
+      carriedBy: survivor.id,
+    }];
+
+    expect(completeManoeuvres(state)).toBe(true);
+    expect(buyUnit(state, "blue", "soldier")).toBe(true);
+    const replacement = state.units[state.units.length - 1]!;
+
+    expect(replacement.id).not.toBe(originalId);
+    expect(new Set(state.units.map((unit) => unit.id)).size).toBe(state.units.length);
+    expect(carriedTreasure(state, survivor.id)?.id).toBe("identity-chest");
+    expect(carriedTreasure(state, replacement.id)).toBeUndefined();
   });
 
   it("prevents purchases when every adjacent castle square is unavailable", () => {
@@ -929,6 +973,7 @@ describe("game rules", () => {
         state.terrain[y * state.width + x] = "water";
       }
     }
+    expect(completeManoeuvres(state)).toBe(true);
     expect(canBuyUnit(state, blue.id, "soldier")).toBe(false);
   });
 
@@ -936,7 +981,7 @@ describe("game rules", () => {
     const state = createGame(setups);
     const red = state.players.find((player) => player.id === "red")!;
     const goldBefore = red.gold;
-    endTurn(state);
+    finishTurn(state);
     expect(activePlayer(state).id).toBe("red");
     expect(red.gold).toBe(goldBefore + TURN_INCOME);
   });
@@ -948,7 +993,9 @@ describe("game rules", () => {
     state.eventDiscard = [];
     const goldBefore = blue.gold;
 
-    expect(drawEndTurnEvent(state, blue.id)?.cardId).toBe("royal-ransom");
+    const ransom = drawEndTurnEvent(state, blue.id);
+    expect(ransom?.cardId).toBe("royal-ransom");
+    expect(ransom?.effects).toEqual([expect.objectContaining({ kind: "gold", amount: 8, position: blue.castle })]);
     expect(blue.gold).toBe(goldBefore + 8);
     expect(state.eventDiscard).toEqual(["royal-ransom"]);
     expect(state.eventDeck).toEqual([]);
@@ -985,35 +1032,49 @@ describe("game rules", () => {
     state.drinkingHorns = [];
 
     state.eventDeck = ["treasure-hunter"];
-    expect(drawEndTurnEvent(state, blue.id)?.cardId).toBe("treasure-hunter");
+    const treasureHunter = drawEndTurnEvent(state, blue.id);
+    expect(treasureHunter?.cardId).toBe("treasure-hunter");
+    expect(treasureHunter?.effects[0]).toMatchObject({ kind: "treasure", entityId: "event-test-chest", amount: 20 });
     expect(state.treasures[0]?.value).toBe(50);
 
     state.eventDeck = ["veterans-tale"];
-    expect(drawEndTurnEvent(state, blue.id)?.cardId).toBe("veterans-tale");
+    const veteransTale = drawEndTurnEvent(state, blue.id);
+    expect(veteransTale?.cardId).toBe("veterans-tale");
+    expect(veteransTale?.effects[0]).toMatchObject({ kind: "unit", unitId: blueSoldier.id });
     expect(blueSoldier.veteran).toBe(true);
 
     state.eventDeck = ["sobering-thought"];
-    expect(drawEndTurnEvent(state, blue.id)?.cardId).toBe("sobering-thought");
+    const soberingThought = drawEndTurnEvent(state, blue.id);
+    expect(soberingThought?.cardId).toBe("sobering-thought");
+    expect(soberingThought?.effects[0]).toMatchObject({ kind: "unit", unitId: redSoldier.id });
     expect(redSoldier.drunk).toBe(false);
 
     state.eventDeck = ["ale-delivery"];
-    expect(drawEndTurnEvent(state, blue.id)?.cardId).toBe("ale-delivery");
+    const aleDelivery = drawEndTurnEvent(state, blue.id);
+    expect(aleDelivery?.cardId).toBe("ale-delivery");
+    expect(aleDelivery?.effects[0]).toMatchObject({ kind: "horn", entityId: expect.stringContaining("event-horn-") });
     expect(state.drinkingHorns).toHaveLength(1);
 
     state.eventDeck = ["hidden-hoard"];
-    expect(drawEndTurnEvent(state, blue.id)?.cardId).toBe("hidden-hoard");
+    const hiddenHoardEvent = drawEndTurnEvent(state, blue.id);
+    expect(hiddenHoardEvent?.cardId).toBe("hidden-hoard");
+    expect(hiddenHoardEvent?.effects[0]).toMatchObject({ kind: "treasure", entityId: expect.stringContaining("event-chest-"), amount: 10 });
     expect(state.treasures).toHaveLength(2);
     const hiddenHoard = state.treasures.find((chest) => chest.id.startsWith("event-chest-"))!;
     expect(hiddenHoard.value).toBe(10);
     expect(Math.max(Math.abs(hiddenHoard.position.x - blue.castle.x), Math.abs(hiddenHoard.position.y - blue.castle.y))).toBeGreaterThanOrEqual(5);
 
     state.eventDeck = ["the-persuader"];
-    expect(drawEndTurnEvent(state, blue.id)?.cardId).toBe("the-persuader");
+    const persuader = drawEndTurnEvent(state, blue.id);
+    expect(persuader?.cardId).toBe("the-persuader");
+    expect(persuader?.effects[0]).toMatchObject({ kind: "unit", unitId: redSoldier.id, previousPlayerId: "red" });
     expect(redSoldier.playerId).toBe("blue");
 
     redSoldier.playerId = "red";
     state.eventDeck = ["called-home"];
-    expect(drawEndTurnEvent(state, blue.id)?.cardId).toBe("called-home");
+    const calledHome = drawEndTurnEvent(state, blue.id);
+    expect(calledHome?.cardId).toBe("called-home");
+    expect(calledHome?.effects[0]).toMatchObject({ kind: "unit", unitId: blueSoldier.id, from: { x: 10, y: 10 } });
     expect(Math.max(Math.abs(blueSoldier.position.x - blue.castle.x), Math.abs(blueSoldier.position.y - blue.castle.y))).toBe(1);
   });
 
@@ -1053,7 +1114,7 @@ describe("game rules", () => {
     }];
     state.eventDeck = ["ravens-counsel"];
 
-    endTurn(state);
+    finishTurn(state);
 
     expect(blue.gold).toBe(70);
     expect(carriedTreasure(state, soldier.id)).toBeUndefined();
@@ -1123,6 +1184,7 @@ describe("game rules", () => {
       const event = drawEndTurnEvent(state, blue.id);
       expect(event?.cardId).toBe(cardId);
       expect(event?.outcome).toContain("Nothing changes.");
+      expect(event?.effects).toEqual([expect.objectContaining({ kind: "benign", label: "Nothing changes" })]);
       expect(blue.gold).toBe(goldBefore);
       expect(state.units).toHaveLength(unitCountBefore);
     }
@@ -1456,6 +1518,7 @@ describe("game rules", () => {
       enemy.position = { x: 25, y: 18 };
       state.units = [...soldiers, enemy];
       state.treasures = [];
+      state.turnPhase = "purchase";
       return state;
     };
 
@@ -1662,6 +1725,7 @@ describe("game rules", () => {
       state.players[0]!.gold = 7;
       state.treasures = [];
       state.units = state.units.filter((unit) => unit.playerId !== "blue" || unit.type === "soldier");
+      state.turnPhase = "purchase";
       return state;
     };
 
@@ -1896,6 +1960,7 @@ describe("game rules", () => {
     expect(action).toBeDefined();
     expect(action!.unitId).not.toBe(carrier.id);
     expect(Math.max(Math.abs(action!.destination.x - blue.castle.x), Math.abs(action!.destination.y - blue.castle.y))).toBeGreaterThan(1);
+    state.turnPhase = "purchase";
     expect(chooseAiPurchase(state, "hard")).toBeUndefined();
   });
 
@@ -1962,6 +2027,7 @@ describe("game rules", () => {
     );
     state.units = [carrier, ...blockers];
     state.treasures = [{ id: "distant-chest", value: 30, position: { ...carrier.position }, carriedBy: carrier.id }];
+    state.turnPhase = "purchase";
 
     expect(chooseAiPurchase(state, "hard")).toBeDefined();
   });

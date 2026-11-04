@@ -9,18 +9,20 @@ import {
   catapultScatterRadius,
   canBuyUnit,
   capitalize,
+  completeManoeuvres,
   createGame,
   disembarkSoldier,
   endTurn,
   fireCatapult,
-  forfeitPendingCatapultFire,
   getCatapultFireCells,
   getDisembarkCells,
   getLegalMoves,
+  getPendingCatapult,
   longboatPassengers,
   moveUnit,
   playerAtCastle,
   positionKey,
+  skipPendingCatapultFire,
   terrainAt,
   unitAt,
   unitFootprint,
@@ -54,7 +56,7 @@ import {
   primeAudio,
   setSoundEffectsEnabled,
 } from "./audio";
-import type { Controller, EventCardId, GameState, PlayerId, PlayerSetup, Position, Unit, UnitType } from "./types";
+import type { Controller, EventCardId, EventDraw, EventEffect, GameState, PlayerId, PlayerSetup, Position, TreasureChest, Unit, UnitType } from "./types";
 
 const PLAYER_OPTIONS: Array<{
   id: PlayerId;
@@ -89,6 +91,7 @@ const goldValue = requireElement<HTMLElement>("gold-value");
 const selectedUnitLabel = requireElement<HTMLElement>("selected-unit");
 const boardHelp = requireElement<HTMLElement>("board-help");
 const fireCatapultButton = requireElement<HTMLButtonElement>("fire-catapult");
+const skipCatapultFireButton = requireElement<HTMLButtonElement>("skip-catapult-fire");
 const disembarkButton = requireElement<HTMLButtonElement>("disembark-viking");
 const gameLog = requireElement<HTMLOListElement>("game-log");
 const eventReveal = requireElement<HTMLElement>("event-reveal");
@@ -109,6 +112,7 @@ let aiRunning = false;
 let drunkMoveRunning = false;
 let movementRunning = false;
 let winterAnnouncementRunning = false;
+let sagaEffectRunning = false;
 let presentedWinterPhase = 0;
 let dismissedEventSequence: number | undefined;
 let soundedEventSequence: number | undefined;
@@ -297,6 +301,7 @@ class BoardScene extends Phaser.Scene {
   private shotImpact?: ShotPresentation & { progress: number };
   private winterAnnouncementProgress?: number;
   private winterTransition?: { fromPhase: number; toPhase: number; progress: number };
+  private sagaEvent?: { event: EventDraw; progress: number };
 
   constructor() {
     super("BoardScene");
@@ -305,7 +310,7 @@ class BoardScene extends Phaser.Scene {
   create(): void {
     this.ready = true;
     this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
-      if (!gameState || openingHornRunning || aiRunning || movementRunning || winterAnnouncementRunning || activePlayer(gameState).controller !== "human" || gameState.winnerId) return;
+      if (!gameState || gameState.turnPhase !== "movement" || openingHornRunning || aiRunning || movementRunning || winterAnnouncementRunning || sagaEffectRunning || activePlayer(gameState).controller !== "human" || gameState.winnerId) return;
       const position = this.boardPositionFromPointer(pointer);
       if (!position) return;
       if (position.x < 0 || position.y < 0 || position.x >= gameState.width || position.y >= gameState.height) return;
@@ -471,39 +476,29 @@ class BoardScene extends Phaser.Scene {
       graphics.strokeRect(x + 3, y + 11, this.tileSize - 6, this.tileSize - 12);
     }
 
+    const sagaEffects = this.sagaEvent?.event.effects ?? [];
+    const appearingTreasureIds = new Set(
+      sagaEffects.filter((effect) => effect.kind === "treasure" && effect.entityId).map((effect) => effect.entityId),
+    );
+    const appearingHornIds = new Set(
+      sagaEffects.filter((effect) => effect.kind === "horn" && effect.entityId).map((effect) => effect.entityId),
+    );
+    const travellingSagaUnitIds = new Set(
+      sagaEffects.filter((effect) => effect.kind === "unit" && effect.unitId && effect.from).map((effect) => effect.unitId),
+    );
+
     for (const treasure of gameState.treasures) {
       if (treasure.carriedBy) continue;
-      const x = treasure.position.x * this.tileSize;
-      const y = treasure.position.y * this.tileSize;
-      graphics.fillStyle(0x4e371e, 0.25);
-      graphics.fillEllipse(x + 15, y + 25, 19, 5);
-      graphics.fillStyle(0x8c5b23, 1);
-      graphics.fillRect(x + 6, y + 13, 18, 11);
-      graphics.fillStyle(0xc88432, 1);
-      graphics.fillRect(x + 6, y + 10, 18, 5);
-      graphics.lineStyle(2, 0xffdf70, 1);
-      graphics.strokeRect(x + 6, y + 13, 18, 11);
-      graphics.strokeLineShape(new Phaser.Geom.Line(x + 15, y + 10, x + 15, y + 24));
-      graphics.fillStyle(0xffdf70, 1);
-      graphics.fillCircle(x + 15, y + 14, 3);
+      if (!appearingTreasureIds.has(treasure.id)) this.drawTreasure(graphics, treasure);
     }
 
     for (const horn of gameState.drinkingHorns) {
-      const x = horn.position.x * this.tileSize;
-      const y = horn.position.y * this.tileSize;
-      graphics.fillStyle(0x5b3a22, 0.2);
-      graphics.fillEllipse(x + 15, y + 25, 14, 4);
-      graphics.fillStyle(0xe6b64d, 1);
-      graphics.fillRect(x + 11, y + 10, 7, 11);
-      graphics.fillTriangle(x + 11, y + 10, x + 18, y + 10, x + 15, y + 5);
-      graphics.lineStyle(2, 0x83511f, 1);
-      graphics.strokeLineShape(new Phaser.Geom.Line(x + 18, y + 14, x + 23, y + 18));
-      graphics.fillCircle(x + 23, y + 19, 3);
+      if (!appearingHornIds.has(horn.id)) this.drawHorn(graphics, horn.position);
     }
 
     for (const unit of gameState.units) {
       const hiddenByClash = unit.id === this.directClash?.attacker.id || unit.id === this.directClash?.defender.id;
-      if (!unit.embarkedOn && unit.id !== this.transit?.unit.id && !hiddenByClash) this.drawUnit(graphics, unit);
+      if (!unit.embarkedOn && unit.id !== this.transit?.unit.id && !hiddenByClash && !travellingSagaUnitIds.has(unit.id)) this.drawUnit(graphics, unit);
     }
 
     if (this.pendingCasualty) this.drawUnit(graphics, this.pendingCasualty);
@@ -549,6 +544,7 @@ class BoardScene extends Phaser.Scene {
 
     if (this.flyingShot) this.drawFlyingShot(graphics, this.flyingShot);
     if (this.shotImpact) this.drawShotImpact(graphics, this.shotImpact);
+    if (this.sagaEvent) this.drawSagaEffects(graphics, this.sagaEvent.event.effects, this.sagaEvent.progress);
 
     if (selectedUnitId) {
       const selected = gameState.units.find((unit) => unit.id === selectedUnitId);
@@ -572,6 +568,122 @@ class BoardScene extends Phaser.Scene {
 
     if (this.winterAnnouncementProgress !== undefined) {
       this.drawWinterAnnouncement(graphics, this.winterAnnouncementProgress);
+    }
+  }
+
+  async animateSagaEvent(event: EventDraw, duration = 1_650): Promise<void> {
+    this.sagaEvent = { event, progress: 0 };
+    await this.animateFor(duration, (progress) => {
+      if (this.sagaEvent) this.sagaEvent.progress = Phaser.Math.Easing.Sine.InOut(progress);
+      this.renderBoard();
+    });
+    this.sagaEvent = undefined;
+    this.renderBoard();
+  }
+
+  private drawTreasure(graphics: Phaser.GameObjects.Graphics, treasure: TreasureChest, alpha = 1): void {
+    const x = treasure.position.x * this.tileSize;
+    const y = treasure.position.y * this.tileSize;
+    graphics.fillStyle(0x4e371e, 0.25 * alpha);
+    graphics.fillEllipse(x + 15, y + 25, 19, 5);
+    graphics.fillStyle(0x8c5b23, alpha);
+    graphics.fillRect(x + 6, y + 13, 18, 11);
+    graphics.fillStyle(0xc88432, alpha);
+    graphics.fillRect(x + 6, y + 10, 18, 5);
+    graphics.lineStyle(2, 0xffdf70, alpha);
+    graphics.strokeRect(x + 6, y + 13, 18, 11);
+    graphics.strokeLineShape(new Phaser.Geom.Line(x + 15, y + 10, x + 15, y + 24));
+    graphics.fillStyle(0xffdf70, alpha);
+    graphics.fillCircle(x + 15, y + 14, 3);
+  }
+
+  private drawHorn(graphics: Phaser.GameObjects.Graphics, position: Position, alpha = 1): void {
+    const x = position.x * this.tileSize;
+    const y = position.y * this.tileSize;
+    graphics.fillStyle(0x5b3a22, 0.2 * alpha);
+    graphics.fillEllipse(x + 15, y + 25, 14, 4);
+    graphics.fillStyle(0xe6b64d, alpha);
+    graphics.fillRect(x + 11, y + 10, 7, 11);
+    graphics.fillTriangle(x + 11, y + 10, x + 18, y + 10, x + 15, y + 5);
+    graphics.lineStyle(2, 0x83511f, alpha);
+    graphics.strokeLineShape(new Phaser.Geom.Line(x + 18, y + 14, x + 23, y + 18));
+    graphics.fillCircle(x + 23, y + 19, 3);
+  }
+
+  private drawSagaEffects(graphics: Phaser.GameObjects.Graphics, effects: EventEffect[], progress: number): void {
+    if (!gameState) return;
+    const visibility = Math.max(0.18, Math.sin(progress * Math.PI));
+    const pulse = 10 + Math.sin(progress * Math.PI * 5) * 3 + progress * 16;
+
+    for (const effect of effects) {
+      const x = (effect.position.x + 0.5) * this.tileSize;
+      const y = (effect.position.y + 0.5) * this.tileSize;
+      const positive = (effect.amount ?? 0) >= 0;
+      const color = effect.kind === "benign"
+        ? 0xdbe6e8
+        : effect.kind === "gold" || effect.kind === "treasure"
+          ? positive ? 0xffdf70 : 0xff907d
+          : effect.kind === "horn"
+            ? 0xe6b64d
+            : 0xc9a8ff;
+
+      if (effect.kind === "treasure" && effect.entityId) {
+        const treasure = gameState.treasures.find((candidate) => candidate.id === effect.entityId);
+        if (treasure) this.drawTreasure(graphics, treasure, Math.min(1, progress * 2.2));
+      } else if (effect.kind === "horn") {
+        this.drawHorn(graphics, effect.position, Math.min(1, progress * 2.2));
+      } else if (effect.kind === "unit" && effect.unitId) {
+        const unit = gameState.units.find((candidate) => candidate.id === effect.unitId);
+        if (unit && effect.from) {
+          const eased = Phaser.Math.Easing.Sine.InOut(progress);
+          const movingPosition = {
+            x: Phaser.Math.Linear(effect.from.x, effect.position.x, eased),
+            y: Phaser.Math.Linear(effect.from.y, effect.position.y, eased),
+          };
+          graphics.fillStyle(0xc9a8ff, 0.45 * visibility);
+          for (let trail = 1; trail <= 4; trail += 1) {
+            const trailProgress = Math.max(0, eased - trail * 0.075);
+            graphics.fillCircle(
+              (Phaser.Math.Linear(effect.from.x, effect.position.x, trailProgress) + 0.5) * this.tileSize,
+              (Phaser.Math.Linear(effect.from.y, effect.position.y, trailProgress) + 0.5) * this.tileSize,
+              5 - trail * 0.6,
+            );
+          }
+          this.drawUnit(graphics, { ...unit, position: movingPosition, moved: false });
+        } else if (unit && effect.previousPlayerId && progress < 0.55) {
+          this.drawUnit(graphics, { ...unit, playerId: effect.previousPlayerId, moved: false }, 1 - progress / 0.55);
+        }
+      }
+
+      if (effect.kind === "benign") {
+        const boardWidth = gameState.width * this.tileSize;
+        const boardHeight = gameState.height * this.tileSize;
+        graphics.fillStyle(0x173b4c, 0.36 * visibility);
+        graphics.fillRect(0, 0, boardWidth, boardHeight);
+        this.add.text(boardWidth / 2, boardHeight / 2, effect.label, {
+          fontFamily: "Georgia, serif",
+          fontSize: "34px",
+          fontStyle: "bold",
+          color: "#f5f0d8",
+          stroke: "#17323a",
+          strokeThickness: 7,
+        }).setOrigin(0.5).setAlpha(visibility).setDepth(45);
+        continue;
+      }
+
+      graphics.lineStyle(4, color, visibility);
+      graphics.strokeCircle(x, y, pulse);
+      graphics.lineStyle(2, 0xffffff, visibility * 0.75);
+      graphics.strokeCircle(x, y, Math.max(5, pulse - 6));
+      this.add.text(x, y - 24 - progress * 16, effect.label, {
+        fontFamily: "Arial, sans-serif",
+        fontSize: "14px",
+        fontStyle: "bold",
+        color: `#${color.toString(16).padStart(6, "0")}`,
+        stroke: "#17323a",
+        strokeThickness: 5,
+        align: "center",
+      }).setOrigin(0.5).setAlpha(visibility).setDepth(45);
     }
   }
 
@@ -1123,7 +1235,7 @@ class BoardScene extends Phaser.Scene {
 }
 
 function handleBoardSelection(position: Position): void {
-  if (!gameState || drunkMoveRunning || movementRunning || winterAnnouncementRunning) return;
+  if (!gameState || gameState.turnPhase !== "movement" || drunkMoveRunning || movementRunning || winterAnnouncementRunning || sagaEffectRunning) return;
   const player = activePlayer(gameState);
   const clickedUnit = unitAt(gameState, position);
 
@@ -1188,7 +1300,10 @@ function handleBoardSelection(position: Position): void {
       updateAll();
       return;
     }
-    forfeitPendingCatapultFire(gameState);
+    selectedUnitId = pendingCatapult.id;
+    interactionMode = "fire";
+    updateAll();
+    return;
   }
 
   if (
@@ -1217,7 +1332,9 @@ function updateAll(): void {
   roundLabel.textContent = gameState.winterPhase > 0
     ? `Round ${gameState.round} · Winter ${gameState.winterPhase}/${WINTER_PHASES}`
     : `Round ${gameState.round}`;
-  turnBadge.textContent = gameState.winnerId ? "Saga complete" : `${player.name} turn`;
+  turnBadge.textContent = gameState.winnerId
+    ? "Saga complete"
+    : `${player.name} · ${gameState.turnPhase === "movement" ? "Manoeuvres" : "Loot spending"}`;
   turnBadge.style.setProperty("--turn-color", player.cssColor);
   goldValue.textContent = `${player.gold} gold`;
   activeChief.style.setProperty("--chief-color", player.cssColor);
@@ -1228,7 +1345,9 @@ function updateAll(): void {
   `;
 
   const selected = gameState.units.find((unit) => unit.id === selectedUnitId);
-  selectedUnitLabel.textContent = selected
+  selectedUnitLabel.textContent = gameState.turnPhase === "purchase"
+    ? "Viking manoeuvres are complete. Spend from the war chest, then finish the purchase phase."
+    : selected
     ? selected.type === "catapult"
       ? `Catapult — two squares wide and always horizontal; move up to 9 spaces and fire up to 11 squares away${selected.pendingFireAfterMove ? " Fire now or lose the shot this round." : selected.fired ? " (already fired)." : "."}`
       : selected.type === "longboat"
@@ -1238,7 +1357,7 @@ function updateAll(): void {
           : `${selected.veteran ? "Veteran" : "Soldier"} — choose 0–9 spaces, or make a forced run to the next object. Castle attack: ${selected.veteran ? "45%" : "40%"}.${selected.veteran ? " Slightly stronger in direct combat." : ""}${carriedTreasure(gameState, selected.id) ? " Deposit the treasure from a square beside your castle." : " Move onto a friendly longboat to embark."}`
     : "Choose a unit on the board.";
 
-  fireCatapultButton.hidden = selected?.type !== "catapult";
+  fireCatapultButton.hidden = gameState.turnPhase !== "movement" || selected?.type !== "catapult";
   fireCatapultButton.disabled =
     !selected ||
     selected.type !== "catapult" ||
@@ -1247,8 +1366,11 @@ function updateAll(): void {
     openingHornRunning ||
     aiRunning;
   fireCatapultButton.textContent = interactionMode === "fire" ? "Choose intended square" : "Fire catapult";
+  const pendingCatapult = getPendingCatapult(gameState);
+  skipCatapultFireButton.hidden = !pendingCatapult || selected?.id !== pendingCatapult.id;
+  skipCatapultFireButton.disabled = player.controller !== "human" || openingHornRunning || aiRunning || movementRunning;
   const passengerCount = selected?.type === "longboat" ? longboatPassengers(gameState, selected.id).length : 0;
-  disembarkButton.hidden = selected?.type !== "longboat";
+  disembarkButton.hidden = gameState.turnPhase !== "movement" || selected?.type !== "longboat";
   disembarkButton.disabled =
     !selected ||
     selected.type !== "longboat" ||
@@ -1258,21 +1380,33 @@ function updateAll(): void {
     openingHornRunning ||
     aiRunning;
   disembarkButton.textContent = interactionMode === "disembark" ? "Choose a shore square" : "Disembark Viking";
+  const hasFurtherUnitMovement = gameState.turnPhase === "movement" && gameState.units.some(
+    (unit) => unit.playerId === player.id && !unit.embarkedOn && getLegalMoves(gameState!, unit.id).length > 0,
+  );
   boardHelp.textContent = openingHornRunning
     ? "The battle horn sounds across the fjord. The first turn begins when its call fades."
+    : pendingCatapult
+      ? "This Catapult has moved. Choose an intended square now, or press Skip firing before continuing."
+      : gameState.turnPhase === "purchase"
+        ? "Loot Spending: purchase any units you want beside your castle, then press Loot Spending Complete."
     : interactionMode === "fire"
       ? `${selected?.pendingFireAfterMove ? "Immediate Catapult shot: " : "Catapult firing: "}choose an intended square up to 11 spaces away. Nearby shots scatter by 1 square; distant shots by 2, but favour the centre of their landing area.`
       : interactionMode === "disembark"
         ? "Choose a highlighted land or ice square beside the longboat. One Viking will step ashore and may move again next turn."
       : selected && carriedTreasure(gameState, selected.id)
         ? "Treasure carrier: end on a highlighted square beside your castle to bank the chest's gold."
-        : "Select one of your units, then choose a highlighted destination. Soldiers may choose 0–9 spaces, or run to the next object, edge, or impassable terrain; other units move up to nine spaces.";
+        : !hasFurtherUnitMovement
+          ? "No further unit movement is available. Press Viking Manoeuvres Complete to open the purchase phase."
+          : "Viking Manoeuvres: select units in any order. Soldiers may choose 0–9 spaces, or run to the next object; other units move up to nine spaces.";
 
-  const humanTurn = player.controller === "human" && !openingHornRunning && !aiRunning && !drunkMoveRunning && !movementRunning && !winterAnnouncementRunning && !gameState.winnerId;
+  const humanTurn = player.controller === "human" && !openingHornRunning && !aiRunning && !drunkMoveRunning && !movementRunning && !winterAnnouncementRunning && !sagaEffectRunning && !gameState.winnerId;
   endTurnButton.disabled = !humanTurn;
+  endTurnButton.textContent = gameState.turnPhase === "movement"
+    ? "Viking Manoeuvres Complete"
+    : "Loot Spending Complete";
   for (const button of purchaseButtons) {
     const type = button.dataset.unit as UnitType;
-    button.disabled = !humanTurn || !canBuyUnit(gameState, player.id, type);
+    button.disabled = !humanTurn || gameState.turnPhase !== "purchase" || !canBuyUnit(gameState, player.id, type);
   }
 
   gameLog.innerHTML = gameState.log
@@ -1283,7 +1417,7 @@ function updateAll(): void {
 
   if (syncEventReveal()) return;
 
-  if (gameState.winterPhase > presentedWinterPhase && !winterAnnouncementRunning && !aiRunning) {
+  if (gameState.winterPhase > presentedWinterPhase && !winterAnnouncementRunning && !sagaEffectRunning && !aiRunning) {
     void runWinterTransition();
     return;
   }
@@ -1291,12 +1425,12 @@ function updateAll(): void {
   const hasPendingDrunkMove = gameState.units.some(
     (unit) => unit.playerId === player.id && unit.type === "soldier" && unit.drunk && !unit.moved && !unit.embarkedOn,
   );
-  if (!gameState.winnerId && !openingHornRunning && !aiRunning && !drunkMoveRunning && !movementRunning && !winterAnnouncementRunning && hasPendingDrunkMove) {
+  if (!gameState.winnerId && !openingHornRunning && !aiRunning && !drunkMoveRunning && !movementRunning && !winterAnnouncementRunning && !sagaEffectRunning && hasPendingDrunkMove) {
     void runDrunkOpeningMoves();
     return;
   }
 
-  if (!gameState.winnerId && !openingHornRunning && player.controller !== "human" && !aiRunning && !drunkMoveRunning && !movementRunning && !winterAnnouncementRunning) {
+  if (!gameState.winnerId && !openingHornRunning && player.controller !== "human" && !aiRunning && !drunkMoveRunning && !movementRunning && !winterAnnouncementRunning && !sagaEffectRunning) {
     void runAiTurn();
   }
 }
@@ -1308,11 +1442,6 @@ function syncEventReveal(): boolean {
     return false;
   }
   const presentation = EVENT_PRESENTATION[event.cardId];
-  if (soundedEventSequence !== event.sequence) {
-    soundedEventSequence = event.sequence;
-    if (event.cardId === "sobering-thought" || event.cardId === "the-persuader") playSoberingUp();
-    if (event.cardId === "called-home" && event.outcome.includes("banks")) playGoldBanked();
-  }
   const player = gameState.players.find((candidate) => candidate.id === event.playerId);
   eventReveal.hidden = false;
   eventSymbol.textContent = presentation.symbol;
@@ -1321,7 +1450,34 @@ function syncEventReveal(): boolean {
   eventDescription.textContent = `${player?.name ?? "A faction"} drew this card at the end of their turn.`;
   eventOutcome.textContent = event.outcome;
   eventDeckCount.textContent = `${gameState.eventDeck.length} card${gameState.eventDeck.length === 1 ? "" : "s"} remain before the next reshuffle.`;
+  eventContinueButton.textContent = event.effects.some((effect) => effect.kind !== "benign")
+    ? "Show effect on board"
+    : "See what happens";
   return true;
+}
+
+async function runSagaEffect(event: EventDraw): Promise<void> {
+  if (!gameState || sagaEffectRunning) return;
+  sagaEffectRunning = true;
+  eventContinueButton.disabled = true;
+  eventReveal.hidden = true;
+  selectedUnitId = undefined;
+  interactionMode = "move";
+
+  if (soundedEventSequence !== event.sequence) {
+    soundedEventSequence = event.sequence;
+    if (event.cardId === "sobering-thought" || event.cardId === "the-persuader") playSoberingUp();
+    if (event.cardId === "called-home" && event.outcome.includes("banks")) playGoldBanked();
+    if (event.cardId === "royal-ransom") playGoldBanked();
+  }
+
+  if (boardScene?.isReady()) await boardScene.animateSagaEvent(event);
+  else await pause(1_000);
+
+  dismissedEventSequence = event.sequence;
+  sagaEffectRunning = false;
+  eventContinueButton.disabled = false;
+  updateAll();
 }
 
 function controllerLabel(controller: Controller): string {
@@ -1483,6 +1639,7 @@ function startGame(): void {
   victoryHornFor = undefined;
   presentedWinterPhase = 0;
   winterAnnouncementRunning = false;
+  sagaEffectRunning = false;
   eventReveal.hidden = true;
   setup.hidden = true;
   gameShell.hidden = false;
@@ -1506,6 +1663,7 @@ function returnToSetup(): void {
   aiRunning = false;
   drunkMoveRunning = false;
   winterAnnouncementRunning = false;
+  sagaEffectRunning = false;
   gameState = undefined;
   selectedUnitId = undefined;
   interactionMode = "move";
@@ -1528,12 +1686,25 @@ startButton.addEventListener("click", startGame);
 soundEffectsToggle.addEventListener("change", () => setSoundEffectsEnabled(soundEffectsToggle.checked));
 eventContinueButton.addEventListener("click", () => {
   if (!gameState?.lastEvent) return;
-  dismissedEventSequence = gameState.lastEvent.sequence;
-  eventReveal.hidden = true;
-  updateAll();
+  void runSagaEffect(gameState.lastEvent);
 });
 endTurnButton.addEventListener("click", () => {
   if (!gameState || activePlayer(gameState).controller !== "human") return;
+  if (gameState.turnPhase === "movement") {
+    const pendingCatapult = getPendingCatapult(gameState);
+    if (pendingCatapult) {
+      selectedUnitId = pendingCatapult.id;
+      interactionMode = "fire";
+      updateAll();
+      return;
+    }
+    if (completeManoeuvres(gameState)) {
+      selectedUnitId = undefined;
+      interactionMode = "move";
+    }
+    updateAll();
+    return;
+  }
   selectedUnitId = undefined;
   interactionMode = "move";
   endTurn(gameState);
@@ -1542,6 +1713,14 @@ endTurnButton.addEventListener("click", () => {
 fireCatapultButton.addEventListener("click", () => {
   if (!gameState || !selectedUnitId || fireCatapultButton.disabled) return;
   interactionMode = "fire";
+  updateAll();
+});
+skipCatapultFireButton.addEventListener("click", () => {
+  if (!gameState || !selectedUnitId || skipCatapultFireButton.disabled) return;
+  if (skipPendingCatapultFire(gameState, selectedUnitId)) {
+    selectedUnitId = undefined;
+    interactionMode = "move";
+  }
   updateAll();
 });
 disembarkButton.addEventListener("click", () => {

@@ -1,4 +1,5 @@
 export type Terrain = "land" | "water" | "ice";
+export type TurnPhase = "movement" | "purchase";
 export type UnitType = "soldier" | "longboat" | "catapult";
 export type EventCardId =
   | "royal-ransom"
@@ -102,11 +103,25 @@ export interface DrinkingHorn {
   position: Position;
 }
 
+/** Serializable board cue used to replay a Saga Card's visible consequence. */
+export interface EventEffect {
+  kind: "unit" | "gold" | "treasure" | "horn" | "benign";
+  position: Position;
+  label: string;
+  unitId?: string;
+  entityId?: string;
+  from?: Position;
+  amount?: number;
+  previousPlayerId?: PlayerId;
+}
+
 export interface EventDraw {
   sequence: number;
   cardId: EventCardId;
   playerId: PlayerId;
   outcome: string;
+  /** Exact pieces and squares changed, retained for rendering, saves and replays. */
+  effects: EventEffect[];
 }
 
 /** Serializable computer plan: useful for saves, replays and AI diagnostics. */
@@ -133,7 +148,7 @@ export interface GameState {
   winterEnabled: boolean;
   /** Completed round after which the first northern band freezes. */
   winterStartRound: number;
-  /** Zero before winter, then one through five as ice advances south. */
+  /** Zero before winter, then one through six as ice advances south. */
   winterPhase: number;
   /** Shared deck: drawn cards move to the discard pile, then are reshuffled. */
   eventDeck: EventCardId[];
@@ -142,6 +157,10 @@ export interface GameState {
   lastEvent?: EventDraw;
   aiPlans: Partial<Record<PlayerId, AiPlan>>;
   activePlayerIndex: number;
+  /** Every turn commits movement and combat before purchasing begins. */
+  turnPhase: TurnPhase;
+  /** Monotonic counter ensures a casualty's identifier is never reused. */
+  nextUnitSequence: number;
   round: number;
   seed: number;
   winnerId?: PlayerId;

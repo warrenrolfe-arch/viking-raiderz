@@ -10,6 +10,7 @@ import {
 import {
   activePlayer,
   canBuyUnit,
+  completeManoeuvres,
   disembarkSoldier,
   endTurn,
   fireCatapult,
@@ -35,6 +36,7 @@ export type ComputerStepKind =
   | "move"
   | "disembark"
   | "catapult"
+  | "manoeuvres-complete"
   | "purchase"
   | "end-turn";
 
@@ -229,6 +231,11 @@ export async function executeComputerTurn(
         await emitStep(hooks, "catapult", state, undefined, shotContext ? completeShotPresentation(state, shotContext) : undefined);
       }
     }
+  }
+
+  if (!state.winnerId) {
+    if (!completeManoeuvres(state)) throw new Error("Computer could not complete its movement phase.");
+    await emitStep(hooks, "manoeuvres-complete", state);
   }
 
   if (!state.winnerId) {
