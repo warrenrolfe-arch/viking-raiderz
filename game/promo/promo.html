@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Viking Raiderz — One-Minute Promo Recorder</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; gap: 16px; background: #102f3a; color: #fff7d6; font-family: Georgia, serif; }
+    main { text-align: center; padding: 20px; }
+    canvas { width: min(92vw, 1280px); aspect-ratio: 16/9; border: 5px solid #f4c34d; border-radius: 16px; box-shadow: 0 18px 60px #071d26; background: #bcebf0; }
+    .controls { margin-top: 14px; display: flex; justify-content: center; gap: 12px; align-items: center; font-family: Arial, sans-serif; }
+    button, a { border: 0; border-radius: 999px; padding: 13px 22px; font-weight: 800; font-size: 16px; background: #f4c34d; color: #17323a; cursor: pointer; text-decoration: none; }
+    button:disabled { opacity: .5; cursor: wait; }
+    #download { display: none; background: #62c47c; }
+    #status { min-width: 240px; text-align: left; }
+  </style>
+</head>
+<body>
+  <main>
+    <canvas id="trailer" width="1280" height="720" aria-label="Viking Raiderz promotional video"></canvas>
+    <div class="controls">
+      <button id="record">Record one-minute trailer</button>
+      <a id="download" download="Viking-Raiderz-Promo-v1.webm">Download video</a>
+      <span id="status">Ready to sound the horn.</span>
+    </div>
+  </main>
+  <script type="module">
+    const canvas = document.querySelector('#trailer');
+    const ctx = canvas.getContext('2d');
+    const recordButton = document.querySelector('#record');
+    const download = document.querySelector('#download');
+    const status = document.querySelector('#status');
+    const commanders = new Image();
+    commanders.src = '/art/faction-commanders-v1.png';
+    await commanders.decode();
+
+    const W = canvas.width;
+    const H = canvas.height;
+    const duration = 60;
+    let previewStart = performance.now();
+    let recording = false;
+
+    const ease = (value) => value < .5 ? 2 * value * value : 1 - Math.pow(-2 * value + 2, 2) / 2;
+    const clamp = (value, low = 0, high = 1) => Math.max(low, Math.min(high, value));
+    const sceneProgress = (time, start, end) => clamp((time - start) / (end - start));
+    const fade = (time, start, end, edge = .7) => Math.min(sceneProgress(time, start, start + edge), 1 - sceneProgress(time, end - edge, end));
+
+    function roundedRect(x, y, w, h, radius, fill, stroke, lineWidth = 3) {
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, radius);
+      if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+      if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lineWidth; ctx.stroke(); }
+    }
+
+    function text(value, x, y, size, color = '#fff7d6', align = 'center', font = 'Georgia', stroke = '#17323a') {
+      ctx.font = `900 ${size}px ${font}`;
+      ctx.textAlign = align;
+      ctx.textBaseline = 'middle';
+      if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = Math.max(3, size / 12); ctx.strokeText(value, x, y); }
+      ctx.fillStyle = color;
+      ctx.fillText(value, x, y);
+    }
+
+    function background(snow = 0) {
+      const gradient = ctx.createLinearGradient(0, 0, W, H);
+      gradient.addColorStop(0, snow ? '#e8f4f5' : '#fff4b0');
+      gradient.addColorStop(.5, snow ? '#cfe9ed' : '#c9f0c8');
+      gradient.addColorStop(1, snow ? '#a9d9e7' : '#9de6ef');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = snow ? '#d9eef1' : '#89c65f';
+      ctx.fillRect(0, 140, W, H - 140);
+    }
+
+    function drawLogo(y = 170, scale = 1) {
+      text('Viking Raiderz', W / 2, y, 92 * scale, '#173b4b');
+      text('THE SAGA CONTINUES', W / 2, y + 78 * scale, 34 * scale, '#e86f36', 'center', 'Arial');
+    }
+
+    function portrait(index, x, y, w, h, color) {
+      const sx = index % 2 * commanders.width / 2;
+      const sy = Math.floor(index / 2) * commanders.height / 2;
+      const sw = commanders.width / 2;
+      const sh = commanders.height / 2;
+      ctx.save();
+      ctx.beginPath(); ctx.roundRect(x, y, w, h, 18); ctx.clip();
+      ctx.drawImage(commanders, sx, sy, sw, sh, x, y, w, h);
+      ctx.restore();
+      roundedRect(x, y, w, h, 18, null, color, 7);
+    }
+
+    function boardBase(iceLine = -1) {
+      ctx.fillStyle = '#8ac95f'; ctx.fillRect(70, 95, 1140, 540);
+      ctx.strokeStyle = 'rgba(32,90,76,.2)'; ctx.lineWidth = 1;
+      const tile = 38;
+      for (let x = 70; x <= 1210; x += tile) { ctx.beginPath(); ctx.moveTo(x, 95); ctx.lineTo(x, 635); ctx.stroke(); }
+      for (let y = 95; y <= 635; y += tile) { ctx.beginPath(); ctx.moveTo(70, y); ctx.lineTo(1210, y); ctx.stroke(); }
+      ctx.fillStyle = '#2da4ca';
+      ctx.fillRect(70, 270, 1140, 150);
+      ctx.fillRect(530, 200, 190, 300);
+      if (iceLine >= 0) {
+        const top = 270;
+        const height = clamp(iceLine) * 150;
+        ctx.fillStyle = '#c7edf2'; ctx.fillRect(70, top, 1140, height);
+        ctx.fillStyle = 'rgba(240,250,255,.65)'; ctx.fillRect(70, 95, 1140, clamp(iceLine) * 325);
+      }
+    }
+
+    function soldier(x, y, color, veteran = false) {
+      ctx.save(); ctx.translate(x, y);
+      ctx.fillStyle = '#f2c18e'; ctx.beginPath(); ctx.arc(0, -10, 9, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#485565'; ctx.fillRect(-10, -20, 20, 7);
+      ctx.fillStyle = color; ctx.beginPath(); ctx.moveTo(-14, 18); ctx.lineTo(14, 18); ctx.lineTo(0, -2); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = '#5b351f'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(-8, 15); ctx.lineTo(-17, -17); ctx.stroke();
+      if (veteran) { text('⚔', 15, -16, 18, '#ffd45c', 'center', 'Arial'); }
+      ctx.restore();
+    }
+
+    function castle(x, y, color) {
+      ctx.fillStyle = '#5b5960'; ctx.fillRect(x - 24, y - 24, 48, 48);
+      ctx.fillStyle = color; ctx.fillRect(x - 17, y - 10, 34, 27);
+      ctx.fillStyle = '#fff0bc'; ctx.fillRect(x - 4, y + 3, 8, 14);
+      for (const dx of [-18, 0, 18]) ctx.fillRect(x + dx - 5, y - 31, 10, 12);
+    }
+
+    function longboat(x, y, color, crew = 3) {
+      ctx.save(); ctx.translate(x, y);
+      ctx.fillStyle = '#53331f'; ctx.beginPath(); ctx.moveTo(-66, 0); ctx.lineTo(-50, 22); ctx.lineTo(48, 22); ctx.lineTo(67, 5); ctx.lineTo(48, 0); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#c57a35'; ctx.fillRect(-51, 5, 101, 7);
+      ctx.strokeStyle = '#51331e'; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(0, 6); ctx.lineTo(0, -48); ctx.stroke();
+      ctx.fillStyle = color; ctx.beginPath(); ctx.moveTo(4, -44); ctx.lineTo(43, -19); ctx.lineTo(4, -12); ctx.closePath(); ctx.fill();
+      for (let i = 0; i < crew; i++) { ctx.fillStyle = '#f2c18e'; ctx.beginPath(); ctx.arc(-28 + i * 28, -1, 7, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#4b5661'; ctx.fillRect(-35 + i * 28, -9, 14, 5); }
+      ctx.restore();
+    }
+
+    function catapult(x, y, color, fire = 0) {
+      ctx.save(); ctx.translate(x, y);
+      ctx.fillStyle = '#6b4128'; ctx.fillRect(-40, 4, 70, 12);
+      ctx.beginPath(); ctx.arc(-30, 22, 12, 0, Math.PI * 2); ctx.arc(28, 22, 12, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#6b4128'; ctx.lineWidth = 8; ctx.beginPath(); ctx.moveTo(-5, 8); ctx.lineTo(37 - fire * 17, -40 + fire * 26); ctx.stroke();
+      ctx.fillStyle = color; ctx.fillRect(-18, -1, 35, 8); ctx.restore();
+    }
+
+    function sagaCard(x, y, title, symbol, color, rotation = 0) {
+      ctx.save(); ctx.translate(x, y); ctx.rotate(rotation);
+      roundedRect(-130, -180, 260, 360, 22, '#fff8df', color, 8);
+      roundedRect(-103, -148, 206, 170, 18, color, null);
+      text(symbol, 0, -65, 96, '#fff7d6', 'center', 'Arial');
+      text(title, 0, 62, 27, color);
+      ctx.fillStyle = '#decda4'; ctx.fillRect(-92, 95, 184, 7); ctx.fillRect(-72, 117, 144, 7);
+      ctx.restore();
+    }
+
+    function drawScene(time) {
+      ctx.clearRect(0, 0, W, H);
+      if (time < 6) {
+        background(); const p = ease(sceneProgress(time, 0, 2)); ctx.globalAlpha = p;
+        drawLogo(205 - (1 - p) * 55, .95);
+        text('A cheerful battle for castles, treasure…', W / 2, 430, 34, '#173b4b', 'center', 'Arial', '#fff6c5');
+        text('…and the last drinking horn.', W / 2, 482, 34, '#e86f36', 'center', 'Arial', '#fff6c5');
+        text('TURN-BASED • 1–4 PLAYERS', W / 2, 595, 25, '#173b4b', 'center', 'Arial', null);
+      } else if (time < 13) {
+        background(); text('CHOOSE YOUR RAIDER', W / 2, 55, 42, '#173b4b');
+        const p = ease(sceneProgress(time, 6, 8));
+        const colors = ['#2d6cdf', '#3d9b63', '#e34d44', '#d94f9d'];
+        const names = ['ASTRID', 'LEIF', 'RAGNAR', 'FREYA'];
+        for (let i = 0; i < 4; i++) {
+          const x = 70 + i * 300; const delay = clamp(p * 1.7 - i * .18);
+          ctx.globalAlpha = delay; portrait(i, x, 105 + (1 - delay) * 55, 260, 430, colors[i]);
+          text(names[i], x + 130, 575, 27, colors[i], 'center', 'Arial', '#fff7d6');
+        }
+        ctx.globalAlpha = 1; text('Human or computer — every faction is invited.', W / 2, 655, 25, '#173b4b', 'center', 'Arial', null);
+      } else if (time < 22) {
+        background(); boardBase();
+        const p = ease(sceneProgress(time, 13, 21));
+        castle(125, 160, '#2d6cdf'); castle(1150, 565, '#e34d44');
+        for (let i = 0; i < 5; i++) soldier(170 + p * 570 + i * 30, 205 + i * 5, '#2d6cdf', i === 0);
+        for (let i = 0; i < 4; i++) soldier(1090 - p * 330 - i * 30, 540 - i * 5, '#e34d44');
+        text('MOVE. OUTWIT. CAPTURE.', W / 2, 55, 41, '#173b4b');
+        if (time > 18) text('Straight lines. Sneaky plans.', W / 2, 665, 26, '#173b4b', 'center', 'Arial', '#fff7d6');
+      } else if (time < 30) {
+        background(); boardBase();
+        const p = ease(sceneProgress(time, 22, 29));
+        const bx = 170 + p * 860; longboat(bx, 345, '#2d6cdf', 3);
+        ctx.strokeStyle = '#d6fbff'; ctx.lineWidth = 5; for (let i = 0; i < 5; i++) { ctx.beginPath(); ctx.arc(bx - 80 - i * 22, 365, 13 + i * 3, 0, Math.PI); ctx.stroke(); }
+        text('LOAD THE LONGBOATS!', W / 2, 58, 43, '#173b4b');
+        text('Three Vikings. One boat. Absolutely no seatbelts.', W / 2, 655, 25, '#173b4b', 'center', 'Arial', '#fff7d6');
+      } else if (time < 38) {
+        background(); boardBase(); const p = sceneProgress(time, 30, 37);
+        catapult(210, 535, '#d94f9d', Math.sin(p * Math.PI));
+        const arc = ease(p); const sx = 248, sy = 485, ex = 1000, ey = 245;
+        const px = sx + (ex - sx) * arc; const py = sy + (ey - sy) * arc - Math.sin(arc * Math.PI) * 230;
+        ctx.fillStyle = '#525b60'; ctx.beginPath(); ctx.arc(px, py, 11, 0, Math.PI * 2); ctx.fill();
+        if (p > .88) { const burst = (p - .88) / .12; ctx.strokeStyle = '#ffcc57'; ctx.lineWidth = 6; for (let i = 0; i < 9; i++) { const a = i / 9 * Math.PI * 2; ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(ex + Math.cos(a) * 75 * burst, ey + Math.sin(a) * 75 * burst); ctx.stroke(); } }
+        text('CATAPULTS HAVE OPINIONS', W / 2, 58, 41, '#173b4b');
+        text('Accuracy sold separately.', W / 2, 655, 27, '#e86f36', 'center', 'Arial', '#fff7d6');
+      } else if (time < 46) {
+        background(); text('EVERY TURN TELLS A SAGA', W / 2, 58, 41, '#173b4b');
+        const p = ease(sceneProgress(time, 38, 41));
+        sagaCard(340, 360 + (1 - p) * 420, 'SHIELD WALL', '⬟', '#497aa3', -.08);
+        sagaCard(640, 340 + (1 - p) * 450, 'YULE FESTIVAL', '✺', '#b44b78', .03);
+        sagaCard(940, 360 + (1 - p) * 480, 'HIGH WINDS', '≋', '#318eac', .08);
+        text('40 cards. Surprises, setbacks and tactical goats.', W / 2, 670, 25, '#173b4b', 'center', 'Arial', '#fff7d6');
+      } else if (time < 52) {
+        const p = ease(sceneProgress(time, 46, 51.5)); background(p); boardBase(p);
+        longboat(505, 345, '#3d9b63', 2); soldier(640, 325, '#e34d44', true); soldier(700, 470, '#2d6cdf');
+        text('WINTER IS COMING', W / 2, 62, 50, '#eafcff');
+        text('The fjord freezes. The battle does not.', W / 2, 665, 27, '#173b4b', 'center', 'Arial', '#fff7d6');
+      } else if (time < 57) {
+        background(); boardBase(1); const p = ease(sceneProgress(time, 52, 55));
+        castle(990, 505, '#e34d44'); soldier(760 + p * 195, 505, '#2d6cdf', true);
+        if (time > 54.7) { ctx.fillStyle = 'rgba(23,50,58,.82)'; roundedRect(225, 230, 830, 220, 24, 'rgba(23,50,58,.86)', '#f4c34d', 7); text('VIKING VICTORY!', W / 2, 315, 72, '#ffd45c'); text('Somebody borrowed a castle permanently.', W / 2, 390, 26, '#fff7d6', 'center', 'Arial', null); }
+      } else {
+        background(); drawLogo(165, .78);
+        text('Sound the horn.', W / 2, 390, 44, '#e86f36');
+        text('Raise a crew. Cross the fjord. Borrow a castle.', W / 2, 460, 28, '#173b4b', 'center', 'Arial', '#fff7d6');
+        roundedRect(390, 540, 500, 72, 36, '#173b4b', '#f4c34d', 4);
+        text('1–4 PLAYERS • HOT-SEAT • FIVE AI LEVELS', W / 2, 576, 21, '#fff7d6', 'center', 'Arial', null);
+        text('VERSION 1 — THE RAID BEGINS', W / 2, 665, 19, '#173b4b', 'center', 'Arial', null);
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    function frame(now) {
+      const time = recording ? Math.min(duration, (now - previewStart) / 1000) : ((now - previewStart) / 1000) % duration;
+      drawScene(time);
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+
+    function makeSoundtrack(audioContext, destination) {
+      const master = audioContext.createGain(); master.gain.value = .18; master.connect(destination);
+      const start = audioContext.currentTime + .05;
+      const notes = [110, 146.83, 164.81, 196, 164.81, 146.83, 123.47, 146.83];
+      for (let beat = 0; beat < 120; beat++) {
+        const at = start + beat * .5;
+        const drum = audioContext.createOscillator(); const dg = audioContext.createGain();
+        drum.type = 'triangle'; drum.frequency.setValueAtTime(95, at); drum.frequency.exponentialRampToValueAtTime(42, at + .16);
+        dg.gain.setValueAtTime(beat % 4 === 0 ? .32 : .15, at); dg.gain.exponentialRampToValueAtTime(.001, at + .2);
+        drum.connect(dg).connect(master); drum.start(at); drum.stop(at + .22);
+        if (beat % 2 === 0) {
+          const melody = audioContext.createOscillator(); const mg = audioContext.createGain();
+          melody.type = 'sawtooth'; melody.frequency.value = notes[(beat / 2) % notes.length];
+          mg.gain.setValueAtTime(.001, at); mg.gain.linearRampToValueAtTime(.055, at + .04); mg.gain.exponentialRampToValueAtTime(.001, at + .42);
+          melody.connect(mg).connect(master); melody.start(at); melody.stop(at + .45);
+        }
+      }
+      for (const hornTime of [0, 37.5, 52.5, 57]) {
+        for (const [index, ratio] of [1, 1.5, 2].entries()) {
+          const horn = audioContext.createOscillator(); const hg = audioContext.createGain(); const at = start + hornTime + index * .08;
+          horn.type = 'sawtooth'; horn.frequency.setValueAtTime(123.47 * ratio, at); horn.frequency.linearRampToValueAtTime(146.83 * ratio, at + 1.25);
+          hg.gain.setValueAtTime(.001, at); hg.gain.linearRampToValueAtTime(.06 / (index + 1), at + .12); hg.gain.exponentialRampToValueAtTime(.001, at + 1.5);
+          horn.connect(hg).connect(master); horn.start(at); horn.stop(at + 1.55);
+        }
+      }
+    }
+
+    recordButton.addEventListener('click', async () => {
+      recordButton.disabled = true; download.style.display = 'none'; recording = true; previewStart = performance.now();
+      const audioContext = new AudioContext(); await audioContext.resume();
+      const audioDestination = audioContext.createMediaStreamDestination(); makeSoundtrack(audioContext, audioDestination);
+      const videoStream = canvas.captureStream(30);
+      const stream = new MediaStream([...videoStream.getVideoTracks(), ...audioDestination.stream.getAudioTracks()]);
+      const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus') ? 'video/webm;codecs=vp9,opus' : 'video/webm';
+      const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 8_000_000 });
+      const chunks = [];
+      recorder.ondataavailable = event => { if (event.data.size) chunks.push(event.data); };
+      recorder.onstop = () => {
+        const blob = new Blob(chunks, { type: mimeType });
+        download.href = URL.createObjectURL(blob); download.style.display = 'inline-block';
+        status.textContent = `Ready — ${(blob.size / 1024 / 1024).toFixed(1)} MB, 60 seconds.`;
+        recordButton.disabled = false; recordButton.textContent = 'Record again'; recording = false; audioContext.close();
+      };
+      recorder.start(1000);
+      const ticker = setInterval(() => {
+        const elapsed = Math.min(duration, (performance.now() - previewStart) / 1000);
+        status.textContent = `Recording… ${Math.floor(elapsed)} / 60 seconds`;
+      }, 500);
+      setTimeout(() => { clearInterval(ticker); recorder.stop(); }, duration * 1000 + 120);
+    });
+  </script>
+</body>
+</html>

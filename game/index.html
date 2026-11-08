@@ -7,19 +7,31 @@
       name="description"
       content="A playful turn-based Viking strategy game for one to four local players."
     />
-    <title>Viking Raiders Returns — Prototype</title>
+    <title>Viking Raiderz — The Saga Continues</title>
   </head>
   <body>
     <div id="app">
       <header class="masthead">
         <div>
           <p class="eyebrow">Playable rules prototype</p>
-          <h1>Viking Raiders <span>Returns</span></h1>
+          <h1>Viking Raiderz <span>The Saga Continues</span></h1>
         </div>
         <p class="tagline">Raise a crew. Cross the fjord. Borrow a castle.</p>
       </header>
 
       <main>
+        <aside id="heritage-note" class="heritage-note" aria-label="A note from the raiders">
+          <p>
+            This game is based upon <strong>Viking Raiders</strong>, developed by Mark Lucas and
+            published by Firebird Software for the ZX Spectrum in 1984. It is not a faithful
+            reproduction: a couple of details have changed, and some new mechanics have joined the
+            raid.
+          </p>
+          <p>
+            I played this more than 40 years ago with my brother, Eddie Nine Fingers. Looks like the re-match is on!
+            <strong>Sound the horn!</strong>
+          </p>
+        </aside>
         <section id="setup" class="setup-card" aria-labelledby="setup-title">
           <div class="setup-copy">
             <p class="eyebrow">War council</p>
@@ -35,26 +47,50 @@
             Hard coordinates attacks and defence; Expert retains longer campaign plans. All receive
             identical gold, units and purchase opportunities.
           </p>
-          <label class="ai-pace-control" for="ai-pace">
-            <span>Computer turn pace</span>
-            <select id="ai-pace">
-              <option value="relaxed">Relaxed — easier to follow</option>
-              <option value="normal" selected>Normal</option>
-              <option value="brisk">Brisk — less waiting</option>
-              <option value="rapid">Rapid — almost instant</option>
-            </select>
-            <small>Changes animation speed only; computer strength stays exactly the same.</small>
-          </label>
+          <div class="setup-launch-controls">
+            <label class="ai-pace-control" for="ai-pace">
+              <span>Computer turn pace</span>
+              <select id="ai-pace">
+                <option value="relaxed">Relaxed — easier to follow</option>
+                <option value="normal" selected>Normal</option>
+                <option value="brisk">Brisk — less waiting</option>
+                <option value="rapid">Rapid — almost instant</option>
+              </select>
+              <small>Changes animation speed only; computer strength stays exactly the same.</small>
+            </label>
+            <button id="start-game" class="primary-button launch-battle-button" type="button">
+              Sound the horn
+            </button>
+          </div>
+          <nav class="longhouse-links" aria-label="Viking Raiderz information and support">
+            <button id="buy-mead" class="longhouse-link mead-link" type="button">
+              <span aria-hidden="true">🍺</span>
+              Buy me a Mead
+            </button>
+            <button class="longhouse-link" type="button" data-longhouse-page="instructions">
+              <span aria-hidden="true">ᚱ</span>
+              Game Instructions
+            </button>
+            <button class="longhouse-link" type="button" data-longhouse-page="acknowledgements">
+              <span aria-hidden="true">✦</span>
+              Acknowledgements
+            </button>
+            <button class="longhouse-link" type="button" data-longhouse-page="feedback">
+              <span aria-hidden="true">✉</span>
+              Feedback Form
+            </button>
+          </nav>
           <div class="setup-toggles" aria-label="Match options">
-            <label class="deck-toggle" for="event-deck-enabled">
+            <label class="deck-toggle saga-frequency-control" for="event-card-frequency">
               <span class="deck-toggle-copy">
                 <strong>Saga event cards</strong>
-                <small>Draw a surprise card at the end of every turn.</small>
+                <small>No cards in round 1. Every two turns draws in rounds 2, 4, 6 and so on.</small>
               </span>
-              <span class="toggle-switch">
-                <input id="event-deck-enabled" type="checkbox" checked />
-                <span aria-hidden="true"></span>
-              </span>
+              <select id="event-card-frequency">
+                <option value="off">Off</option>
+                <option value="every-turn">Every turn</option>
+                <option value="every-two-turns" selected>Every two turns</option>
+              </select>
             </label>
             <label class="deck-toggle" for="random-starting-player">
               <span class="deck-toggle-copy">
@@ -79,10 +115,20 @@
             <label class="deck-toggle" for="sound-effects-enabled">
               <span class="deck-toggle-copy">
                 <strong>Sound effects</strong>
-                <small>Play Catapult release, flight and impact sounds.</small>
+                <small>Play battle horns, combat, Catapults, and other game sounds.</small>
               </span>
               <span class="toggle-switch">
                 <input id="sound-effects-enabled" type="checkbox" checked />
+                <span aria-hidden="true"></span>
+              </span>
+            </label>
+            <label class="deck-toggle" for="music-enabled">
+              <span class="deck-toggle-copy">
+                <strong>Music</strong>
+                <small>Play quiet music in the war council and after the battle.</small>
+              </span>
+              <span class="toggle-switch">
+                <input id="music-enabled" type="checkbox" checked />
                 <span aria-hidden="true"></span>
               </span>
             </label>
@@ -101,9 +147,6 @@
             <p id="setup-message" role="status">
               Blue is ready for you. Red has volunteered to be the opposition.
             </p>
-            <button id="start-game" class="primary-button" type="button">
-              Sound the horn
-            </button>
           </div>
         </section>
 
@@ -117,6 +160,80 @@
               <div id="turn-badge" class="turn-badge">Blue turn</div>
             </div>
             <div id="game-canvas" class="game-canvas" aria-label="Interactive battlefield"></div>
+            <section id="horn-ceremony" class="horn-ceremony" aria-live="polite" hidden>
+              <div>
+                <p class="eyebrow">The fjord awaits</p>
+                <div class="horn-ceremony-icon" aria-hidden="true">
+                  <svg viewBox="0 0 280 150" focusable="false">
+                    <defs>
+                      <linearGradient id="war-horn-ivory" x1="0" x2="1" y1="0.2" y2="0.85">
+                        <stop offset="0" stop-color="#fff0bb" />
+                        <stop offset="0.48" stop-color="#d9a75a" />
+                        <stop offset="1" stop-color="#8c4b20" />
+                      </linearGradient>
+                      <linearGradient id="war-horn-metal" x1="0" x2="1">
+                        <stop offset="0" stop-color="#f7db7b" />
+                        <stop offset="0.5" stop-color="#b66a25" />
+                        <stop offset="1" stop-color="#ffdc70" />
+                      </linearGradient>
+                    </defs>
+                    <path d="M28 29 C98 19 131 37 158 69 C180 95 211 104 248 87 L261 111 C208 140 161 129 128 94 C100 64 73 54 38 59 Z" fill="url(#war-horn-ivory)" stroke="#562d1a" stroke-width="7" stroke-linejoin="round" />
+                    <path d="M47 29 L62 57" stroke="url(#war-horn-metal)" stroke-width="15" />
+                    <path d="M94 38 L110 70" stroke="url(#war-horn-metal)" stroke-width="13" />
+                    <path d="M143 72 L159 101" stroke="url(#war-horn-metal)" stroke-width="12" />
+                    <ellipse cx="252" cy="99" rx="20" ry="25" transform="rotate(-27 252 99)" fill="#412016" stroke="#f0c45d" stroke-width="7" />
+                    <path d="M20 27 L43 59" stroke="#f5dc83" stroke-width="12" stroke-linecap="round" />
+                    <path d="M31 22 L54 55" stroke="#6d3920" stroke-width="5" stroke-linecap="round" />
+                    <path d="M72 86 C91 105 107 116 125 122" fill="none" stroke="#f9dda0" stroke-width="6" stroke-linecap="round" opacity="0.8" />
+                  </svg>
+                </div>
+                <h2>The battle horn sounds</h2>
+                <p>Hold fast — the raid begins when its final echo fades.</p>
+              </div>
+            </section>
+            <section id="human-turn-announcement" class="human-turn-announcement" aria-live="polite" hidden>
+              <div>
+                <p class="eyebrow">Your turn</p>
+                <h2 id="human-turn-title">Blue takes command</h2>
+                <p id="human-turn-copy">Viking Manoeuvres may begin.</p>
+              </div>
+            </section>
+            <section id="map-preview" class="map-preview" aria-live="polite" hidden>
+              <div>
+                <p class="eyebrow">Scout the fjord</p>
+                <h2>Choose this battlefield?</h2>
+                <p>Look over the fjord before the raid begins. Redrawing creates a completely fresh, fair map and starting arrangement.</p>
+              </div>
+              <div class="map-preview-actions">
+                <button id="redraw-map" class="secondary-button" type="button">Redraw map</button>
+                <button id="accept-map" class="primary-button" type="button">Keep fjord &amp; sound the horn</button>
+              </div>
+            </section>
+            <section id="saga-table" class="saga-table" aria-label="Saga Card table" hidden>
+              <div class="saga-pile-group">
+                <p class="eyebrow">Draw pile</p>
+                <div id="saga-draw-pile" class="saga-pile saga-draw-pile pile-high" aria-label="The Saga draw pile">
+                  <span class="saga-card-back" aria-hidden="true">ᚱ</span>
+                </div>
+                <small id="saga-draw-state">The saga is well stocked</small>
+              </div>
+              <div id="saga-current-slot" class="saga-current-slot" aria-live="polite">
+                <span id="saga-current-symbol" aria-hidden="true">✦</span>
+                <div>
+                  <p class="eyebrow">Last Saga Card drawn</p>
+                  <strong id="saga-current-title">No card drawn yet</strong>
+                  <small id="saga-current-drawer">The first card arrives after Round 1.</small>
+                  <small id="saga-current-detail" class="saga-current-detail"></small>
+                </div>
+              </div>
+              <div class="saga-pile-group saga-pile-group-right">
+                <p class="eyebrow">Discard pile</p>
+                <div id="saga-discard-pile" class="saga-pile saga-discard-pile pile-empty" aria-label="The Saga discard pile">
+                  <span id="saga-discard-symbol" aria-hidden="true">✦</span>
+                </div>
+                <small id="saga-discard-state">No tales told yet</small>
+              </div>
+            </section>
             <p id="board-help" class="board-help">
               Select one of your units, then choose a highlighted destination. Units travel in
               straight lines for up to nine spaces and stop at the first object.
@@ -138,7 +255,7 @@
                 </button>
                 <button class="purchase-button" data-unit="longboat" type="button">
                   <span class="purchase-icon">⌁</span>
-                  <span><b>Longboat</b><small>5 gold</small></span>
+                  <span><b>Longboat</b><small>4 gold</small></span>
                 </button>
                 <button class="purchase-button" data-unit="catapult" type="button">
                   <span class="purchase-icon">◆</span>
@@ -156,9 +273,7 @@
               <button id="skip-catapult-fire" class="fire-button" type="button" hidden>
                 Skip firing
               </button>
-              <button id="disembark-viking" class="fire-button boat-button" type="button" hidden>
-                Disembark Viking
-              </button>
+              <div id="boat-passengers" class="boat-passengers" aria-label="Longboat passengers" hidden></div>
             </section>
 
             <button id="end-turn" class="end-turn-button" type="button">Viking Manoeuvres Complete</button>
@@ -168,12 +283,13 @@
               <ol id="game-log" class="game-log" aria-live="polite"></ol>
             </section>
 
+            <button id="view-battle-report" class="primary-button report-button" type="button" hidden>View battle report</button>
             <button id="new-game" class="text-button" type="button">Return to war council</button>
           </aside>
         </section>
 
         <section id="event-reveal" class="event-reveal" role="dialog" aria-modal="true" aria-labelledby="event-title" hidden>
-          <div class="event-card">
+          <div id="event-card" class="event-card">
             <p class="eyebrow">Saga card drawn</p>
             <div id="event-symbol" class="event-symbol" aria-hidden="true">✦</div>
             <h2 id="event-title">Royal Ransom</h2>
@@ -182,6 +298,182 @@
             <p id="event-deck-count" class="event-deck-count"></p>
             <button id="event-continue" class="primary-button" type="button">Continue the saga</button>
           </div>
+        </section>
+
+        <section id="battle-report" class="battle-report" role="dialog" aria-modal="true" aria-labelledby="battle-report-title" hidden>
+          <article class="battle-report-card">
+            <header class="battle-report-header">
+              <div class="battle-report-seal" aria-hidden="true">⚔</div>
+              <div>
+                <p class="eyebrow">The skald's official account</p>
+                <h2 id="battle-report-title">Battle Report</h2>
+                <p id="battle-report-subtitle"></p>
+              </div>
+            </header>
+            <div id="battle-report-summary" class="battle-report-summary"></div>
+            <div class="battle-report-table-wrap">
+              <table class="battle-report-table">
+                <thead>
+                  <tr>
+                    <th>Faction</th>
+                    <th>Final fate</th>
+                    <th>Force left</th>
+                    <th>Hired</th>
+                    <th>Clash wins</th>
+                    <th>Treasure</th>
+                    <th>Gold left</th>
+                  </tr>
+                </thead>
+                <tbody id="battle-report-factions"></tbody>
+              </table>
+            </div>
+            <section class="battle-report-awards">
+              <h3>The highly questionable honours</h3>
+              <div id="battle-report-award-list" class="battle-report-award-list"></div>
+            </section>
+            <div class="battle-report-actions">
+              <button id="review-battlefield" class="secondary-button" type="button">Review battlefield</button>
+              <button id="report-new-game" class="primary-button" type="button">Return to war council</button>
+            </div>
+          </article>
+        </section>
+
+        <section id="longhouse-modal" class="battle-report longhouse-modal" role="dialog" aria-modal="true" aria-labelledby="longhouse-title" hidden>
+          <article class="battle-report-card longhouse-card">
+            <header class="battle-report-header">
+              <div id="longhouse-seal" class="battle-report-seal longhouse-seal" aria-hidden="true">ᚱ</div>
+              <div>
+                <p id="longhouse-eyebrow" class="eyebrow">Advice from the war council</p>
+                <h2 id="longhouse-title" tabindex="-1">Game Instructions</h2>
+                <p id="longhouse-subtitle">Everything required to raid responsibly. More or less.</p>
+              </div>
+            </header>
+
+            <section class="longhouse-page instructions-page" data-longhouse-content="instructions">
+              <div class="instruction-intro">
+                <h3>Welcome to the fjord</h3>
+                <p>
+                  <strong>Viking Raiderz</strong> is a light-hearted, turn-based strategy game for one to four
+                  human or computer-controlled factions. Raise Vikings, recover treasure, cross the fjord and
+                  capture every rival castle. A match should take roughly 20–30 minutes, depending on tactical
+                  genius, dramatic pauses, and how many Vikings stop for a drink.
+                </p>
+              </div>
+              <div class="instruction-grid">
+                <article>
+                  <h3>⚑ Your turn</h3>
+                  <p><strong>1. Viking Manoeuvres:</strong> move units, fight, board or leave Longboats, and fire Catapults in any order.</p>
+                  <p>Press <strong>Viking Manoeuvres Complete</strong> when the raiding is done. Movement is then locked.</p>
+                  <p><strong>2. Loot Spending:</strong> buy units beside your home castle, then press <strong>Loot Spending Complete</strong>. A Saga Card may follow.</p>
+                </article>
+                <article>
+                  <h3>➜ Movement</h3>
+                  <p>Units travel in straight horizontal, vertical or diagonal lines.</p>
+                  <p>Vikings may stop anywhere from 0–9 clear squares away. They may run farther only until the first object, terrain boundary or board edge stops them.</p>
+                  <p>Longboats and Catapults move up to nine squares. Vikings cannot enter water unless safely aboard a friendly Longboat.</p>
+                </article>
+                <article>
+                  <h3>⚔ Vikings and Veterans</h3>
+                  <p>Vikings cost <strong>2 gold</strong>. When one defeats another Viking, the survivor becomes a bare-chested, axe-waving <strong>Veteran</strong>.</p>
+                  <p>Ordinary clashes are evenly matched. Veterans have a modest advantage over ordinary Vikings and a slightly better chance of capturing castles.</p>
+                  <p>A victorious treasure-carrier keeps its loot and claims any chest carried by the defeated Viking. History is written by the winner—and apparently so are the luggage labels.</p>
+                </article>
+                <article>
+                  <h3>⛵ Longboats</h3>
+                  <p>Longboats cost <strong>4 gold</strong>, occupy three horizontal squares and carry up to three sober Vikings.</p>
+                  <p>Use them to ferry raiders across the fjord or ram enemy Longboats. A successful ram sinks the target; Catapult hits can sink boats too.</p>
+                  <p>Enemy boats cannot be boarded by Vikings. This is considered poor ferry etiquette.</p>
+                </article>
+                <article>
+                  <h3>● Catapults</h3>
+                  <p>Catapults cost <strong>8 gold</strong>, occupy two horizontal squares and fire up to eleven squares.</p>
+                  <p>The stone follows an arc and may scatter away from the chosen square. A Catapult that moves must fire immediately or skip its shot before another unit acts.</p>
+                  <p>Vikings always defeat Catapults in direct combat—expensive siege machinery dislikes axes at close range.</p>
+                </article>
+                <article>
+                  <h3>▣ Gold and treasure</h3>
+                  <p>Each faction begins with <strong>50 gold</strong> and gains one gold at the start of later turns.</p>
+                  <p>Move a sober Viking onto a chest to collect it. On a later turn, finish beside your home castle to bank the gold. Defeated carriers may lose their treasure to the victor.</p>
+                  <p>New units must fit beside the home castle. If the courtyard is full, the quartermaster simply folds their arms.</p>
+                </article>
+                <article>
+                  <h3>✦ The Saga Deck</h3>
+                  <p>Saga Cards bring good fortune, bad bookkeeping and occasional goats. They are drawn after turns according to the option chosen at setup; round 1 is always card-free.</p>
+                  <p>Cards may alter gold, move or change Vikings, create treasure, affect boats, or do absolutely nothing in a poetic fashion. Used cards enter the discard pile and are reshuffled when required.</p>
+                </article>
+                <article>
+                  <h3>❄ Winter Is Coming</h3>
+                  <p>When enabled, winter begins after a random completed round from 4–10 and advances from north to south over six full rounds.</p>
+                  <p>Frozen water becomes passable ice for land units. Longboats caught in it are trapped and their crews disembark where space permits. Plan ahead, or perfect your dignified shivering.</p>
+                </article>
+                <article>
+                  <h3>🍺 Drinking Horns</h3>
+                  <p>A Viking who reaches a horn stops, drops carried treasure and becomes drunk. Drunk Vikings move unpredictably at the start of their turns and cannot board boats or carry chests.</p>
+                  <p>An enemy attacking a drunk Viking recruits and sobers them instead. Apparently the opposing benefits package is very persuasive.</p>
+                </article>
+                <article>
+                  <h3>♜ Winning the saga</h3>
+                  <p>Attack an enemy castle with a Viking or Veteran. Failed attackers are lost; successful attackers remain beside the walls and capture the faction's surviving forces.</p>
+                  <p>Be the last faction with a castle standing. A Battle Report will then record the glory, casualties, treasure and questionable honours.</p>
+                </article>
+              </div>
+            </section>
+
+            <section class="longhouse-page acknowledgements-page" data-longhouse-content="acknowledgements" hidden>
+              <article class="acknowledgement-panel">
+                <h3>Credits</h3>
+                <p>The full credits roll will be populated here as the game approaches its public voyage.</p>
+              </article>
+              <article class="acknowledgement-panel merry-makers-panel">
+                <h3>Merry Makers</h3>
+                <p>Those kind enough to buy me a mead will be listed here, thanks.</p>
+              </article>
+            </section>
+
+            <section class="longhouse-page feedback-page" data-longhouse-content="feedback" hidden>
+              <div class="feedback-intro">
+                <h3>Send word by raven</h3>
+                <p>
+                  Spotted a bug? Found a clever tactic? Dreamed up a Saga Card involving a suspicious herring?
+                  Your feedback can help make the next raid better.
+                </p>
+              </div>
+              <form id="feedback-form" class="feedback-form">
+                <label>
+                  Your name <span>(optional)</span>
+                  <input id="feedback-name" name="name" type="text" autocomplete="name" maxlength="80" />
+                </label>
+                <label>
+                  Your email <span>(optional)</span>
+                  <input id="feedback-email" name="email" type="email" autocomplete="email" maxlength="120" />
+                </label>
+                <label>
+                  What are you reporting?
+                  <select id="feedback-category" name="category">
+                    <option>Gameplay feedback</option>
+                    <option>Bug report</option>
+                    <option>Saga Card idea</option>
+                    <option>Accessibility or display issue</option>
+                    <option>Something else from the longhouse</option>
+                  </select>
+                </label>
+                <label>
+                  Your message
+                  <textarea id="feedback-message" name="message" rows="7" maxlength="3000" required placeholder="Tell us what happened, what you expected, or what marvellous chaos your new Saga Card would cause..."></textarea>
+                </label>
+                <div class="feedback-send-row">
+                  <p id="feedback-status" role="status">
+                    For now, this opens your email app with a message addressed to <strong>hello@vikingraiderz.co.uk</strong>. Direct website delivery will be connected later.
+                  </p>
+                  <button class="primary-button" type="submit">Prepare raven-mail</button>
+                </div>
+              </form>
+            </section>
+
+            <div class="battle-report-actions">
+              <button id="close-longhouse" class="primary-button" type="button">Return to the war council</button>
+            </div>
+          </article>
         </section>
       </main>
     </div>

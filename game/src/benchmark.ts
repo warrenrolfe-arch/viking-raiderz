@@ -20,6 +20,7 @@ export interface BenchmarkConfig {
   winterEnabled?: boolean;
   randomStartingPlayer?: boolean;
   randomPlayerOrder?: boolean;
+  includeSelfMatches?: boolean;
 }
 
 export interface BenchmarkMatchResult {
@@ -56,6 +57,22 @@ export interface DifficultyBenchmarkRow {
   unusedPurchaseOpportunities: number;
   purchaseBlockedTurns: number;
   turnsAtUnitCap: number;
+  transportBoardings: number;
+  crewedBoatMoves: number;
+  emptyBoatMoves: number;
+  transportMissionTurns: number;
+  transportAssignedCrew: number;
+  transportWaitingTurns: number;
+  frozenTransportTurns: number;
+  averageLandingDistance: number;
+  immediateCastleOpportunities: number;
+  missedImmediateCastleOpportunities: number;
+  assaultStagingTurns: number;
+  stagedRaidersHeld: number;
+  assignedRaiders: number;
+  assignedDefenders: number;
+  targetChanges: number;
+  noMoveTurns: number;
 }
 
 export interface BenchmarkReport {
@@ -68,11 +85,12 @@ export interface BenchmarkReport {
 
 interface MutableRow extends Omit<
   DifficultyBenchmarkRow,
-  "winRate" | "averageRounds" | "averageUnitsNearHome" | "averageEndingGold"
+  "winRate" | "averageRounds" | "averageUnitsNearHome" | "averageEndingGold" | "averageLandingDistance"
 > {
   totalRounds: number;
   totalUnitsNearHome: number;
   totalEndingGold: number;
+  totalLandingDistance: number;
 }
 
 function createMutableRow(difficulty: Difficulty): MutableRow {
@@ -99,6 +117,22 @@ function createMutableRow(difficulty: Difficulty): MutableRow {
     unusedPurchaseOpportunities: 0,
     purchaseBlockedTurns: 0,
     turnsAtUnitCap: 0,
+    transportBoardings: 0,
+    crewedBoatMoves: 0,
+    emptyBoatMoves: 0,
+    transportMissionTurns: 0,
+    transportAssignedCrew: 0,
+    transportWaitingTurns: 0,
+    frozenTransportTurns: 0,
+    totalLandingDistance: 0,
+    immediateCastleOpportunities: 0,
+    missedImmediateCastleOpportunities: 0,
+    assaultStagingTurns: 0,
+    stagedRaidersHeld: 0,
+    assignedRaiders: 0,
+    assignedDefenders: 0,
+    targetChanges: 0,
+    noMoveTurns: 0,
   };
 }
 
@@ -121,6 +155,22 @@ function addTurn(row: MutableRow, turn: ComputerTurnSummary): void {
   row.unusedPurchaseOpportunities += turn.unusedPurchaseOpportunities;
   if (turn.purchaseBlockedBySpace) row.purchaseBlockedTurns += 1;
   if (turn.atSoftUnitCap) row.turnsAtUnitCap += 1;
+  row.transportBoardings += turn.transportBoardings;
+  row.crewedBoatMoves += turn.crewedBoatMoves;
+  row.emptyBoatMoves += turn.emptyBoatMoves;
+  row.transportMissionTurns += turn.transportMissionTurns;
+  row.transportAssignedCrew += turn.transportAssignedCrew;
+  row.transportWaitingTurns += turn.transportWaitingTurns;
+  row.frozenTransportTurns += turn.frozenTransportTurns;
+  row.totalLandingDistance += turn.landingDistanceTotal;
+  row.immediateCastleOpportunities += turn.immediateCastleOpportunity;
+  row.missedImmediateCastleOpportunities += turn.missedImmediateCastleOpportunity;
+  row.assaultStagingTurns += turn.assaultStagingTurn;
+  row.stagedRaidersHeld += turn.stagedRaidersHeld;
+  row.assignedRaiders += turn.assignedRaiders;
+  row.assignedDefenders += turn.assignedDefenders;
+  row.targetChanges += turn.targetChanges;
+  row.noMoveTurns += turn.noMoveTurn;
 }
 
 async function runMatch(
@@ -172,6 +222,7 @@ export async function runBenchmark(config: BenchmarkConfig = {}): Promise<Benchm
     winterEnabled: config.winterEnabled ?? false,
     randomStartingPlayer: config.randomStartingPlayer ?? true,
     randomPlayerOrder: config.randomPlayerOrder ?? true,
+    includeSelfMatches: config.includeSelfMatches ?? true,
   };
   const rows = new Map(resolved.difficulties.map((difficulty) => [difficulty, createMutableRow(difficulty)]));
   const matches: BenchmarkMatchResult[] = [];
@@ -180,6 +231,7 @@ export async function runBenchmark(config: BenchmarkConfig = {}): Promise<Benchm
 
   for (let first = 0; first < resolved.difficulties.length; first += 1) {
     for (let second = first; second < resolved.difficulties.length; second += 1) {
+      if (first === second && !resolved.includeSelfMatches) continue;
       const firstDifficulty = resolved.difficulties[first]!;
       const secondDifficulty = resolved.difficulties[second]!;
       for (let sample = 0; sample < resolved.seedsPerPair; sample += 1) {
@@ -247,6 +299,22 @@ export async function runBenchmark(config: BenchmarkConfig = {}): Promise<Benchm
     unusedPurchaseOpportunities: row.unusedPurchaseOpportunities,
     purchaseBlockedTurns: row.purchaseBlockedTurns,
     turnsAtUnitCap: row.turnsAtUnitCap,
+    transportBoardings: row.transportBoardings,
+    crewedBoatMoves: row.crewedBoatMoves,
+    emptyBoatMoves: row.emptyBoatMoves,
+    transportMissionTurns: row.transportMissionTurns,
+    transportAssignedCrew: row.transportAssignedCrew,
+    transportWaitingTurns: row.transportWaitingTurns,
+    frozenTransportTurns: row.frozenTransportTurns,
+    averageLandingDistance: row.boatLandings === 0 ? 0 : row.totalLandingDistance / row.boatLandings,
+    immediateCastleOpportunities: row.immediateCastleOpportunities,
+    missedImmediateCastleOpportunities: row.missedImmediateCastleOpportunities,
+    assaultStagingTurns: row.assaultStagingTurns,
+    stagedRaidersHeld: row.stagedRaidersHeld,
+    assignedRaiders: row.assignedRaiders,
+    assignedDefenders: row.assignedDefenders,
+    targetChanges: row.targetChanges,
+    noMoveTurns: row.noMoveTurns,
   }));
 
   return {
@@ -287,12 +355,60 @@ export function formatBenchmarkReport(report: BenchmarkReport): string {
     row.purchaseBlockedTurns,
     row.turnsAtUnitCap,
   ].join(" | "));
+  const transportHeader = [
+    "",
+    "Transport | Boardings | Crewed moves | Empty moves | Mission turns | Avg assigned | Waiting | Frozen | Avg landing distance",
+    "----------|----------:|-------------:|------------:|--------------:|-------------:|--------:|-------:|---------------------:",
+  ];
+  const transportRows = report.rows.map((row) => [
+    row.difficulty,
+    row.transportBoardings,
+    row.crewedBoatMoves,
+    row.emptyBoatMoves,
+    row.transportMissionTurns,
+    decimal(row.transportMissionTurns === 0 ? 0 : row.transportAssignedCrew / row.transportMissionTurns),
+    row.transportWaitingTurns,
+    row.frozenTransportTurns,
+    decimal(row.averageLandingDistance),
+  ].join(" | "));
+  const tacticsHeader = [
+    "",
+    "Tactics | Combats | Castle attacks | Captures | Immediate | Missed | Staging turns | Held raiders | Avg raiders | Avg defenders | Target changes | No-move turns",
+    "--------|--------:|---------------:|---------:|----------:|-------:|--------------:|-------------:|------------:|--------------:|---------------:|--------------:",
+  ];
+  const tacticsRows = report.rows.map((row) => [
+    row.difficulty,
+    row.combats,
+    row.castleAttacks,
+    row.castleCaptures,
+    row.immediateCastleOpportunities,
+    row.missedImmediateCastleOpportunities,
+    row.assaultStagingTurns,
+    row.stagedRaidersHeld,
+    decimal(row.turns === 0 ? 0 : row.assignedRaiders / row.turns),
+    decimal(row.turns === 0 ? 0 : row.assignedDefenders / row.turns),
+    row.targetChanges,
+    row.noMoveTurns,
+  ].join(" | "));
+  const headToHead = report.config.difficulties.flatMap((first, firstIndex) =>
+    report.config.difficulties.slice(firstIndex + 1).map((second) => {
+      const matches = report.matches.filter((match) =>
+        match.blueDifficulty !== match.redDifficulty &&
+        [match.blueDifficulty, match.redDifficulty].includes(first) &&
+        [match.blueDifficulty, match.redDifficulty].includes(second),
+      );
+      const firstWins = matches.filter((match) => match.winnerDifficulty === first).length;
+      const secondWins = matches.filter((match) => match.winnerDifficulty === second).length;
+      return `${first} vs ${second}: ${firstWins}-${secondWins}${matches.some((match) => match.stalled) ? ` (${matches.filter((match) => match.stalled).length} stalled)` : ""}`;
+    }),
+  );
   const footer = [
     "",
-    `Matches: ${report.matches.length}; cards: ${report.config.eventDeckEnabled ? "on" : "off"}; winter: ${report.config.winterEnabled ? "on" : "off"}; random starter: ${report.config.randomStartingPlayer ? "on" : "off"}; random order: ${report.config.randomPlayerOrder ? "on" : "off"}; maximum rounds: ${report.config.maxRounds}`,
+    `Matches: ${report.matches.length}; cards: ${report.config.eventDeckEnabled ? "on" : "off"}; winter: ${report.config.winterEnabled ? "on" : "off"}; self matches: ${report.config.includeSelfMatches ? "on" : "off"}; random starter: ${report.config.randomStartingPlayer ? "on" : "off"}; random order: ${report.config.randomPlayerOrder ? "on" : "off"}; maximum rounds: ${report.config.maxRounds}`,
     `Colour wins — Blue: ${report.colorWins.blue}, Red: ${report.colorWins.red}, stalled: ${report.colorWins.stalled}`,
+    `Head-to-head — ${headToHead.join("; ")}`,
     "Economy diagnostics: Gold is average ending gold; Unused is unused purchase opportunities; Blocked is turns with gold but no legal placement; Cap is turns at the 12-unit soft limit.",
     `Elapsed: ${(report.elapsedMilliseconds / 1000).toFixed(2)} seconds`,
   ];
-  return [...header, ...rows, ...footer].join("\n");
+  return [...header, ...rows, ...transportHeader, ...transportRows, ...tacticsHeader, ...tacticsRows, ...footer].join("\n");
 }

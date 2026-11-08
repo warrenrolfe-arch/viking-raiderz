@@ -5,6 +5,7 @@ import type {
   EventDraw,
   GameOptions,
   Player,
+  PlayerBattleStats,
   PlayerId,
   PlayerSetup,
   Position,
@@ -27,13 +28,13 @@ export const UNIT_RULES: Record<
   { name: string; cost: number; range: number; power: number; terrain: Terrain[] }
 > = {
   soldier: { name: "Soldier", cost: 2, range: Number.MAX_SAFE_INTEGER, power: 3, terrain: ["land", "ice"] },
-  longboat: { name: "Longboat", cost: 5, range: 9, power: 4, terrain: ["water"] },
+  longboat: { name: "Longboat", cost: 4, range: 9, power: 4, terrain: ["water"] },
   catapult: { name: "Catapult", cost: 8, range: 9, power: 2, terrain: ["land", "ice"] },
 };
 
 const PLAYER_DEFINITIONS: Record<
   PlayerId,
-  Omit<Player, "controller" | "gold" | "castle" | "eliminated">
+  Omit<Player, "controller" | "gold" | "sturdyLongboatProtection" | "castle" | "eliminated">
 > = {
   blue: {
     id: "blue",
@@ -55,8 +56,8 @@ const PLAYER_DEFINITIONS: Record<
     id: "pink",
     name: "Pink",
     title: "Freya the Fearsome-ish",
-    color: 0xd94f9d,
-    cssColor: "#d94f9d",
+    color: 0xf58ac6,
+    cssColor: "#f58ac6",
     emblem: "Raven",
   },
   green: {
@@ -68,6 +69,31 @@ const PLAYER_DEFINITIONS: Record<
     emblem: "Pine",
   },
 };
+
+function emptyBattleStats(): PlayerBattleStats {
+  return {
+    unitsPurchased: { soldier: 0, longboat: 0, catapult: 0 },
+    treasureChestsBanked: 0,
+    goldBanked: 0,
+    combatVictories: 0,
+    unitsLost: 0,
+    longboatsLost: 0,
+    longboatsSunk: 0,
+    catapultShots: 0,
+    catapultHits: 0,
+    friendlyFireHits: 0,
+    castleAttacks: 0,
+    castlesCaptured: 0,
+    promotions: 0,
+    drunkenIncidents: 0,
+    sagaCardsDrawn: 0,
+    sturdyLongboatSaves: 0,
+  };
+}
+
+function battleStatsFor(state: GameState, playerId: PlayerId): PlayerBattleStats {
+  return state.battleStats[playerId] ??= emptyBattleStats();
+}
 
 const CASTLE_ANCHORS: Position[] = [
   { x: 3, y: 5 },
@@ -88,13 +114,38 @@ export const EVENT_CARDS: readonly EventCardId[] = [
   "catapult-repairs",
   "the-persuader",
   "called-home",
-  "ravens-counsel",
-  "jarls-beard",
-  "ordinary-rock",
-  "longboat-laundry",
-  "mead-inspector",
-  "axe-shaped-cloud",
+  "man-overboard",
+  "bad-viking",
+  "bad-viking",
+  "bandits",
+  "inside-job",
+  "loose-change",
+  "the-deserter",
+  "new-recruit",
+  "wrong-address",
+  "jarls-feast",
+  "sturdy-longboat",
+  "sturdy-longboat",
+  "yule-festival",
+  "berserker-rage",
+  "berserker-rage",
+  "high-winds",
+  "shield-wall",
+  "favourable-tide",
+  "forgotten-rations",
 ];
+
+/** The live deck samples ten of these harmless cards for each match. */
+export const BENIGN_SAGA_CARD_POOL: readonly EventCardId[] = [
+  "ravens-counsel", "jarls-beard", "ordinary-rock", "longboat-laundry", "mead-inspector", "axe-shaped-cloud",
+  "tactical-goat", "helmet-inspection", "missing-spoon", "rune-misread", "missing-boot", "raven-union",
+  "porridge-emergency", "axe-seminar", "jarls-new-hat", "legendary-nap", "suspicious-seagull", "beard-braiding",
+  "herring-debate", "helgas-cabbage", "longhouse-draft", "runic-typo", "viking-yoga", "wrong-saga",
+  "spare-helmet", "fjord-fashion", "taxidermy-workshop", "unhelpful-map", "thors-lost-sock", "quiet-battle-cry",
+  "axe-polishing", "ferocious-duck",
+];
+
+export const BENIGN_SAGA_CARDS_PER_MATCH = 10;
 
 export function positionKey(position: Position): string {
   return `${position.x},${position.y}`;
@@ -142,6 +193,30 @@ function generateTerrain(width: number, height: number, seed: number): Terrain[]
   // A one-square edge bank traps Soldiers against the map boundary. This
   // recipe always leaves a genuinely usable two-to-four-square land bank.
   const sideMargin = () => 2 + Math.floor(nextRandom() * 3);
+  const subtleShelf = (length: number): { start: number; end: number } => {
+    // Keep both ends straight so adjoining channels retain broad corners.
+    // The middle shelf is deliberately modest: enough to break up a ruler-
+    // straight bank without turning a readable classic map into a maze.
+    const shelfLength = Math.max(3, Math.min(6, Math.floor(length / 5)));
+    const earliest = 3;
+    const latest = Math.max(earliest, length - shelfLength - 3);
+    const start = earliest + Math.floor(nextRandom() * (latest - earliest + 1));
+    return { start, end: start + shelfLength - 1 };
+  };
+  const stampBentHorizontal = (fromX: number, toX: number, y: number, inwardY: number) => {
+    const length = toX - fromX + 1;
+    const shelf = subtleShelf(length);
+    for (let step = 0; step < length; step += 1) {
+      stampWater(fromX + step, y + (step >= shelf.start && step <= shelf.end ? inwardY : 0), 1);
+    }
+  };
+  const stampBentVertical = (x: number, fromY: number, toY: number, inwardX: number) => {
+    const length = toY - fromY + 1;
+    const shelf = subtleShelf(length);
+    for (let step = 0; step < length; step += 1) {
+      stampWater(x + (step >= shelf.start && step <= shelf.end ? inwardX : 0), fromY + step, 1);
+    }
+  };
 
   // One map in three uses a deliberately classic-looking island layout.  It
   // includes a separate inner waterway, but both waterways are broad enough
@@ -161,11 +236,13 @@ function generateTerrain(width: number, height: number, seed: number): Terrain[]
     const bottom = height - 5 - Math.floor(nextRandom() * 2);
 
     // An open, asymmetric outer fjord creates a central land mass rather than
-    // the same central river on every match.
-    for (let x = left; x <= right; x += 1) stampWater(x, top, 1);
-    for (let y = top + 2; y <= bottom; y += 1) stampWater(right, y, 1);
-    for (let x = left + 2; x <= right; x += 1) stampWater(x, bottom, 1);
-    for (let y = top + 5; y <= bottom - 3; y += 1) stampWater(left, y, 1);
+    // the same central river on every match. Each long channel has one small
+    // inward shelf, breaking up the rectangular banks while the overlapping
+    // three-by-three stamps preserve a continuous route for horizontal boats.
+    stampBentHorizontal(left, right, top, 1);
+    stampBentVertical(right, top + 2, bottom, -1);
+    stampBentHorizontal(left + 2, right, bottom, -1);
+    stampBentVertical(left, top + 5, bottom - 3, 1);
 
     // A detached internal inlet varies in length and position.  Keeping two
     // clear land squares from the outer fjord makes the separation intentional.
@@ -499,6 +576,7 @@ export function createGame(
     ...PLAYER_DEFINITIONS[setup.id],
     controller: setup.controller,
     gold: 50,
+    sturdyLongboatProtection: 0,
     castle: { ...castlePositions[setup.id] },
     eliminated: false,
   }));
@@ -525,6 +603,8 @@ export function createGame(
   const winterStartRound = WINTER_EARLIEST_ROUND + Math.floor(
     winterRandom() * (WINTER_LATEST_ROUND - WINTER_EARLIEST_ROUND + 1),
   );
+  const eventCardFrequency = options.eventCardFrequency
+    ?? (options.eventDeckEnabled === false ? "off" : "every-two-turns");
 
   const state: GameState = {
     width: BOARD_WIDTH,
@@ -534,7 +614,8 @@ export function createGame(
     units: [],
     treasures: [],
     drinkingHorns: [],
-    eventDeckEnabled: options.eventDeckEnabled ?? true,
+    eventCardFrequency,
+    eventDeckEnabled: eventCardFrequency !== "off",
     randomStartingPlayer,
     randomPlayerOrder,
     winterEnabled,
@@ -543,6 +624,8 @@ export function createGame(
     eventDeck: [],
     eventDiscard: [],
     eventSequence: 0,
+    completedTurns: 0,
+    battleStats: Object.fromEntries(players.map((player) => [player.id, emptyBattleStats()])),
     aiPlans: {},
     activePlayerIndex: 0,
     turnPhase: "movement",
@@ -561,7 +644,10 @@ export function createGame(
 
   createTreasures(state, seed);
   createDrinkingHorns(state, seed);
-  if (state.eventDeckEnabled) state.eventDeck = shuffleEventCards(state, EVENT_CARDS);
+  if (state.eventDeckEnabled) {
+    const benignCards = shuffleEventCards(state, BENIGN_SAGA_CARD_POOL).slice(0, BENIGN_SAGA_CARDS_PER_MATCH);
+    state.eventDeck = shuffleEventCards(state, [...EVENT_CARDS, ...benignCards]);
+  }
 
   return state;
 }
@@ -708,6 +794,9 @@ function bankTreasureAtHome(state: GameState, soldier: Unit): number | undefined
   ) !== 1) return undefined;
 
   player.gold += treasure.value;
+  const stats = battleStatsFor(state, soldier.playerId);
+  stats.treasureChestsBanked += 1;
+  stats.goldBanked += treasure.value;
   state.treasures = state.treasures.filter((candidate) => candidate.id !== treasure.id);
   state.log.unshift(`${capitalize(soldier.playerId)} deposits treasure beside the castle and banks ${treasure.value} gold!`);
   return treasure.value;
@@ -771,7 +860,7 @@ function canPlaceLongboat(
       isInside(state, cell) &&
       terrainAt(state, cell) === "water" &&
       !unitAtExcept(state, cell, ignoredId) &&
-      !playerAtCastle(state, cell),
+      !movementObstacleAt(state, cell),
   );
 }
 
@@ -994,27 +1083,75 @@ function eventOpenPositionsAtLeast(
   return positions;
 }
 
+/** Find the nearest square where a loose chest can exist as its own board object. */
+function nearestLooseTreasurePosition(state: GameState, origin: Position): Position | undefined {
+  return eventOpenPositionsNear(state, origin, Math.max(state.width, state.height), true)[0];
+}
+
+/**
+ * Normally a moving Viking collects the chest it enters. This fallback keeps
+ * the one-object-per-square invariant when an ineligible unit (for example a
+ * drunk Viking) finishes on treasure dropped during combat.
+ */
+function relocateLooseTreasureUnderUnit(state: GameState, unit: Unit): void {
+  const footprintKeys = new Set(unitFootprint(unit).map(positionKey));
+  for (const treasure of state.treasures) {
+    if (treasure.carriedBy || !footprintKeys.has(positionKey(treasure.position))) continue;
+    const position = nearestLooseTreasurePosition(state, treasure.position);
+    if (position) treasure.position = { ...position };
+  }
+}
+
 const BENIGN_SAGA_OUTCOMES: Partial<Record<EventCardId, string>> = {
-  "ravens-counsel": "Nothing changes. A raven offers excellent advice, but declines to explain it.",
-  "jarls-beard": "Nothing changes. The Jarl's beard is admired from every possible angle.",
-  "ordinary-rock": "Nothing changes. A perfectly ordinary rock is found to be exactly where it was left.",
-  "longboat-laundry": "Nothing changes. Longboat laundry flaps bravely in the fjord breeze.",
-  "mead-inspector": "Nothing changes. The mead inspector declares the barrel 'adequately meady'.",
-  "axe-shaped-cloud": "Nothing changes. An axe-shaped cloud drifts past without attacking anyone.",
+  "ravens-counsel": "A raven offers excellent advice, but declines to explain any of it.",
+  "jarls-beard": "The Jarl's beard is admired from every possible angle. It accepts the praise graciously.",
+  "ordinary-rock": "A perfectly ordinary rock is found to be exactly where it was left. Suspicious.",
+  "longboat-laundry": "Longboat laundry flaps bravely in the fjord breeze. One sock remains unclaimed.",
+  "mead-inspector": "The mead inspector declares the barrel 'adequately meady' and requests another sample.",
+  "axe-shaped-cloud": "An axe-shaped cloud drifts past without attacking anyone. This time.",
+  "tactical-goat": "A goat studies the battle map, eats the northern coastline, and is promoted to cartographer.",
+  "helmet-inspection": "Every helmet passes inspection except the inspector's, which appears to be a cooking pot.",
+  "missing-spoon": "The royal spoon is missing. Everyone is searched. The goat is offended.",
+  "rune-misread": "The runes promise glory, fog, and a suspiciously large turnip. Interpretation is postponed.",
+  "missing-boot": "One boot is missing. Its owner claims this makes running away from danger less tempting.",
+  "raven-union": "The ravens demand better seeds, shorter hours, and tiny helmets. Negotiations continue.",
+  "porridge-emergency": "The porridge is too thick to stir. Three axes are offered. None improve the situation.",
+  "axe-seminar": "A travelling expert explains the sharp end of an axe. Attendance is enthusiastic and unhelpful.",
+  "jarls-new-hat": "The Jarl unveils a new hat. It is very tall, very furry, and entirely unsuitable for battle.",
+  "legendary-nap": "A warrior takes a legendary nap and wakes with no useful tactical insight whatsoever.",
+  "suspicious-seagull": "A seagull watches the battle with alarming confidence, then steals somebody's biscuit.",
+  "beard-braiding": "An emergency beard-braiding contest ends in a draw and several knots of diplomacy.",
+  "herring-debate": "The war council debates whether herring is a fish or a strategy. No consensus is reached.",
+  "helgas-cabbage": "Helga's prize cabbage is inspected, admired, and ruled completely irrelevant to the campaign.",
+  "longhouse-draft": "A draught sweeps through the longhouse. Every cloak flaps heroically for a full minute.",
+  "runic-typo": "A rune is discovered to say 'raid at dawnish'. The timetable is politely ignored.",
+  "viking-yoga": "The warband practises Viking yoga: downward raven, angry bear, and the forbidden folding longboat.",
+  "wrong-saga": "The storyteller opens the wrong saga. It is mostly about sheep and a surprisingly brave spoon.",
+  "spare-helmet": "A spare helmet is found. Nobody fits it, but it makes an excellent fruit bowl.",
+  "fjord-fashion": "Fjord Fashion Week begins. Capes are judged, boots are admired, and no territory changes hands.",
+  "taxidermy-workshop": "A taxidermist offers battlefield souvenirs. The offer is unanimously declined after the demonstration.",
+  "unhelpful-map": "A new map labels every enemy castle 'somewhere over there'. It is filed under optimism.",
+  "thors-lost-sock": "Thor's lost sock is found in the mead hall. It crackles faintly and smells of thunder.",
+  "quiet-battle-cry": "The warband rehearses a quiet battle cry for stealth. Nobody can hear it, including the warband.",
+  "axe-polishing": "Axe polishing reaches such a shine that several Vikings pause to admire their own eyebrows.",
+  "ferocious-duck": "A ferocious duck patrols the shoreline. Even the Longboats agree to give it plenty of room.",
 };
 
 type ResolvedEventCard = Pick<EventDraw, "outcome" | "effects">;
+
+function sagaCardHasNoEffect(_state: GameState, outcome: string): ResolvedEventCard {
+  return {
+    outcome,
+    effects: [],
+  };
+}
 
 function resolveEventCard(state: GameState, player: Player, cardId: EventCardId): ResolvedEventCard | undefined {
   const benignOutcome = BENIGN_SAGA_OUTCOMES[cardId];
   if (benignOutcome) {
     return {
       outcome: benignOutcome,
-      effects: [{
-        kind: "benign",
-        position: { x: Math.floor(state.width / 2), y: Math.floor(state.height / 2) },
-        label: "Nothing changes",
-      }],
+      effects: [],
     };
   }
 
@@ -1046,7 +1183,7 @@ function resolveEventCard(state: GameState, player: Player, cardId: EventCardId)
     if (!soldier) return undefined;
     soldier.veteran = true;
     return {
-      outcome: `A loyal Soldier is promoted to Veteran.`,
+      outcome: `A loyal Viking is promoted to Veteran.`,
       effects: [{ kind: "unit", unitId: soldier.id, position: { ...soldier.position }, label: "Promoted to Veteran!" }],
     };
   }
@@ -1056,10 +1193,17 @@ function resolveEventCard(state: GameState, player: Player, cardId: EventCardId)
       .filter((unit) => unit.type === "soldier" && unit.drunk && !unit.embarkedOn)
       .sort((a, b) => eventDistance(a.position, player.castle) - eventDistance(b.position, player.castle))[0];
     if (!soldier) return undefined;
+    const previousUnit = { ...soldier, position: { ...soldier.position } };
     soldier.drunk = false;
     return {
       outcome: `The nearest drunk Viking sobers up.`,
-      effects: [{ kind: "unit", unitId: soldier.id, position: { ...soldier.position }, label: "Sobered up!" }],
+      effects: [{
+        kind: "unit",
+        unitId: soldier.id,
+        position: { ...soldier.position },
+        label: "Sobered up!",
+        previousUnit,
+      }],
     };
   }
 
@@ -1129,6 +1273,364 @@ function resolveEventCard(state: GameState, player: Player, cardId: EventCardId)
     };
   }
 
+  if (cardId === "man-overboard") {
+    const passengers = state.units.filter((unit) =>
+      unit.playerId === player.id && unit.type === "soldier" && Boolean(unit.embarkedOn),
+    );
+    const passenger = passengers[Math.floor(random(state) * passengers.length)];
+    if (!passenger) {
+      return sagaCardHasNoEffect(state, `${player.name} has no crew at sea. Everyone stays safely aboard.`);
+    }
+    const boat = state.units.find((unit) => unit.id === passenger.embarkedOn);
+    const removedUnit = { ...passenger, position: { ...(boat?.position ?? passenger.position) } };
+    const carried = carriedTreasure(state, passenger.id);
+    removeUnitAndCargo(state, passenger);
+    return {
+      outcome: `${player.name} loses one ${passenger.veteran ? "Veteran" : "crew member"} overboard${carried ? `, along with ${carried.value} gold` : ""}.`,
+      effects: [{
+        kind: "unit",
+        unitId: passenger.id,
+        position: { ...removedUnit.position },
+        label: "Man overboard!",
+        removedUnit,
+      }],
+    };
+  }
+
+  if (cardId === "bad-viking") {
+    const veterans = state.units.filter((unit) => unit.playerId === player.id && unit.type === "soldier" && unit.veteran);
+    const veteran = veterans[Math.floor(random(state) * veterans.length)];
+    if (!veteran) {
+      return sagaCardHasNoEffect(state, `${player.name} has no Veteran to demote. The disciplinary hearing is cancelled.`);
+    }
+    veteran.veteran = false;
+    const boat = veteran.embarkedOn ? state.units.find((unit) => unit.id === veteran.embarkedOn) : undefined;
+    return {
+      outcome: `One of ${player.name}'s Veterans is demoted to an ordinary Viking.`,
+      effects: [{
+        kind: "unit",
+        unitId: veteran.id,
+        position: { ...(boat?.position ?? veteran.position) },
+        label: "Demoted to Viking!",
+      }],
+    };
+  }
+
+  if (cardId === "bandits") {
+    const available = state.treasures.filter((treasure) => !treasure.carriedBy);
+    const treasure = available[Math.floor(random(state) * available.length)];
+    if (!treasure) {
+      return sagaCardHasNoEffect(state, "The bandits find no unattended treasure and leave disappointed.");
+    }
+    const removedTreasure = { ...treasure, position: { ...treasure.position } };
+    state.treasures = state.treasures.filter((candidate) => candidate.id !== treasure.id);
+    return {
+      outcome: `Bandits steal an unattended ${treasure.value}-gold chest from the map.`,
+      effects: [{
+        kind: "treasure",
+        entityId: treasure.id,
+        position: { ...treasure.position },
+        label: "Stolen by bandits!",
+        amount: -treasure.value,
+        removedTreasure,
+      }],
+    };
+  }
+
+  if (cardId === "inside-job") {
+    const rivals = state.players.filter((candidate) => candidate.id !== player.id && !candidate.eliminated);
+    const rival = rivals[Math.floor(random(state) * rivals.length)];
+    const stolen = Math.floor(player.gold / 2);
+    if (!rival || stolen <= 0) {
+      return sagaCardHasNoEffect(state, `${player.name}'s treasury is too empty for the inside job to pay off.`);
+    }
+    player.gold -= stolen;
+    rival.gold += stolen;
+    return {
+      outcome: `An inside job transfers ${stolen} gold from ${player.name} to ${rival.name}.`,
+      effects: [
+        { kind: "gold", position: { ...player.castle }, label: `-${stolen} gold stolen`, amount: -stolen },
+        { kind: "gold", position: { ...rival.castle }, label: `+${stolen} stolen gold`, amount: stolen },
+      ],
+    };
+  }
+
+  if (cardId === "loose-change") {
+    player.gold += 3;
+    return {
+      outcome: `${player.name} finds 3 gold down the back of the longhall bench.`,
+      effects: [{ kind: "gold", position: { ...player.castle }, label: "+3 loose gold", amount: 3 }],
+    };
+  }
+
+  if (cardId === "the-deserter") {
+    const candidates = state.units.filter((unit) =>
+      unit.playerId === player.id &&
+      unit.type === "soldier" &&
+      !unit.veteran &&
+      !unit.embarkedOn &&
+      !carriedTreasure(state, unit.id),
+    );
+    const deserter = candidates[Math.floor(random(state) * candidates.length)];
+    if (!deserter) {
+      return sagaCardHasNoEffect(state, `${player.name} has no eligible ordinary Viking willing to desert.`);
+    }
+    const removedUnit = { ...deserter, position: { ...deserter.position } };
+    removeUnitAndCargo(state, deserter);
+    return {
+      outcome: `One of ${player.name}'s ordinary Vikings slips away from the army.`,
+      effects: [{
+        kind: "unit",
+        unitId: deserter.id,
+        position: { ...deserter.position },
+        label: "The Deserter!",
+        removedUnit,
+      }],
+    };
+  }
+
+  if (cardId === "new-recruit") {
+    const destinations = eventOpenPositionsNear(state, player.castle, 1, true);
+    const position = destinations[Math.floor(random(state) * destinations.length)];
+    if (!position) {
+      return sagaCardHasNoEffect(state, `${player.name}'s new recruit cannot find a legal space beside the castle.`);
+    }
+    const recruit: Unit = {
+      id: nextUnitId(state, player.id, "soldier"),
+      playerId: player.id,
+      type: "soldier",
+      position: { ...position },
+      moved: true,
+      fired: true,
+    };
+    state.units.push(recruit);
+    return {
+      outcome: `A new Viking volunteers for ${player.name}'s army.`,
+      effects: [{
+        kind: "unit",
+        unitId: recruit.id,
+        from: { ...player.castle },
+        position: { ...position },
+        label: "New recruit!",
+      }],
+    };
+  }
+
+  if (cardId === "wrong-address") {
+    const horn = state.drinkingHorns[Math.floor(random(state) * state.drinkingHorns.length)];
+    if (!horn) {
+      return sagaCardHasNoEffect(state, "There are no Drinking Horns available for the confused delivery crew.");
+    }
+    const destinations = eventOpenPositionsNear(state, horn.position, 4);
+    const destination = destinations[Math.floor(random(state) * destinations.length)];
+    if (!destination) {
+      return sagaCardHasNoEffect(state, "The Drinking Horn is already at the only address the delivery crew can reach.");
+    }
+    const from = { ...horn.position };
+    horn.position = { ...destination };
+    return {
+      outcome: "A Drinking Horn is delivered to the wrong address nearby.",
+      effects: [{
+        kind: "horn",
+        entityId: horn.id,
+        from,
+        position: { ...destination },
+        label: "Wrong address!",
+      }],
+    };
+  }
+
+  if (cardId === "jarls-feast") {
+    const paid = Math.min(3, player.gold);
+    if (paid <= 0) {
+      return sagaCardHasNoEffect(state, `${player.name} has no gold for the Jarl's feast, so everyone brings sandwiches.`);
+    }
+    player.gold -= paid;
+    return {
+      outcome: `${player.name} contributes ${paid} gold to the Jarl's feast.`,
+      effects: [{ kind: "gold", position: { ...player.castle }, label: `-${paid} feast gold`, amount: -paid }],
+    };
+  }
+
+  if (cardId === "sturdy-longboat") {
+    player.sturdyLongboatProtection += 1;
+    return {
+      outcome: `${player.name}'s next Longboat struck by a Catapult or enemy ram will survive.`,
+      effects: [{
+        kind: "protection",
+        position: { ...player.castle },
+        label: "Next Longboat protected!",
+        amount: 1,
+      }],
+    };
+  }
+
+  if (cardId === "yule-festival") {
+    const targets = state.players
+      .filter((faction) => !faction.eliminated)
+      .map((faction) => {
+        const eligible = state.units.filter((unit) =>
+          unit.playerId === faction.id &&
+          unit.type === "soldier" &&
+          !unit.drunk &&
+          !unit.embarkedOn,
+        );
+        return eligible[Math.floor(random(state) * eligible.length)];
+      })
+      .filter((unit): unit is Unit => Boolean(unit));
+    if (targets.length === 0) {
+      return sagaCardHasNoEffect(state, "The Yule Festival begins, but every available Viking is already drunk or at sea.");
+    }
+    for (const target of targets) intoxicateSoldier(state, target);
+    return {
+      outcome: `The Yule Festival leaves ${targets.length} Viking${targets.length === 1 ? "" : "s"} gloriously drunk — one from each eligible faction.`,
+      effects: targets.map((target) => ({
+        kind: "unit" as const,
+        unitId: target.id,
+        position: { ...target.position },
+        label: "Yule merriment!",
+      })),
+    };
+  }
+
+  if (cardId === "berserker-rage") {
+    const eligible = state.units.filter((unit) =>
+      unit.playerId === player.id &&
+      unit.type === "soldier" &&
+      !unit.rage &&
+      !unit.embarkedOn,
+    );
+    const target = eligible[Math.floor(random(state) * eligible.length)];
+    if (!target) {
+      return sagaCardHasNoEffect(state, `${player.name} has no available Viking or Veteran to enter a Berserker Rage.`);
+    }
+    target.rage = true;
+    return {
+      outcome: `One of ${player.name}'s ${target.veteran ? "Veterans" : "Vikings"} enters a Berserker Rage and will win their next direct Viking clash.`,
+      effects: [{
+        kind: "unit",
+        unitId: target.id,
+        position: { ...target.position },
+        label: "BERSERKER RAGE!",
+      }],
+    };
+  }
+
+  if (cardId === "high-winds") {
+    const directions = [-1, 0, 1].flatMap((dx) =>
+      [-1, 0, 1]
+        .filter((dy) => dx !== 0 || dy !== 0)
+        .map((dy) => ({ dx, dy })),
+    );
+    const movableBoats = state.units
+      .filter((unit) => unit.playerId === player.id && unit.type === "longboat" && !longboatIsFrozen(state, unit))
+      .map((boat) => {
+        const driftDirections = directions.map(({ dx, dy }) => {
+          const destinations: Position[] = [];
+          for (let distance = 1; distance <= 3; distance += 1) {
+            const destination = {
+              x: boat.position.x + dx * distance,
+              y: boat.position.y + dy * distance,
+            };
+            if (!canPlaceLongboat(state, destination, { x: 1, y: 0 }, boat.id)) break;
+            destinations.push(destination);
+          }
+          return destinations;
+        }).filter((destinations) => destinations.length > 0);
+        return { boat, driftDirections };
+      })
+      .filter((candidate) => candidate.driftDirections.length > 0);
+    const chosen = movableBoats[Math.floor(random(state) * movableBoats.length)];
+    if (!chosen) {
+      return sagaCardHasNoEffect(state, `${player.name} has no Longboat that the high winds can move safely.`);
+    }
+    const chosenDirection = chosen.driftDirections[Math.floor(random(state) * chosen.driftDirections.length)]!;
+    const destination = chosenDirection[Math.floor(random(state) * chosenDirection.length)]!;
+    const from = { ...chosen.boat.position };
+    chosen.boat.position = { ...destination };
+    chosen.boat.facing = { x: 1, y: 0 };
+    for (const passenger of longboatPassengers(state, chosen.boat.id)) passenger.position = { ...destination };
+    const distance = Math.max(Math.abs(destination.x - from.x), Math.abs(destination.y - from.y));
+    return {
+      outcome: `High winds blow one of ${player.name}'s Longboats ${distance} square${distance === 1 ? "" : "s"} off course.`,
+      effects: [{
+        kind: "unit",
+        unitId: chosen.boat.id,
+        from,
+        position: { ...destination },
+        label: "Blown off course!",
+      }],
+    };
+  }
+
+  if (cardId === "shield-wall") {
+    const eligible = state.units.filter((unit) =>
+      unit.playerId === player.id && unit.type === "soldier" && !unit.embarkedOn && !unit.shieldWall,
+    );
+    const target = eligible[Math.floor(random(state) * eligible.length)];
+    if (!target) {
+      return sagaCardHasNoEffect(state, `${player.name} has no available Viking or Veteran to form a Shield Wall.`);
+    }
+    target.shieldWall = true;
+    return {
+      outcome: `One of ${player.name}'s ${target.veteran ? "Veterans" : "Vikings"} forms a Shield Wall and will survive the next Catapult impact.`,
+      effects: [{ kind: "unit", unitId: target.id, position: { ...target.position }, label: "SHIELD WALL!" }],
+    };
+  }
+
+  if (cardId === "favourable-tide") {
+    const enemyCastles = state.players
+      .filter((candidate) => candidate.id !== player.id && !candidate.eliminated)
+      .map((candidate) => candidate.castle);
+    const directions = [-1, 0, 1].flatMap((dx) =>
+      [-1, 0, 1].filter((dy) => dx !== 0 || dy !== 0).map((dy) => ({ dx, dy })),
+    );
+    const movableBoats = state.units
+      .filter((unit) => unit.playerId === player.id && unit.type === "longboat" && !longboatIsFrozen(state, unit))
+      .map((boat) => {
+        const currentDistance = Math.min(...enemyCastles.map((castle) => eventDistance(boat.position, castle)));
+        const driftDirections = directions.map(({ dx, dy }) => {
+          const destinations: Position[] = [];
+          for (let distance = 1; distance <= 3; distance += 1) {
+            const destination = { x: boat.position.x + dx * distance, y: boat.position.y + dy * distance };
+            if (!canPlaceLongboat(state, destination, { x: 1, y: 0 }, boat.id)) break;
+            const destinationDistance = Math.min(...enemyCastles.map((castle) => eventDistance(destination, castle)));
+            if (destinationDistance < currentDistance) destinations.push(destination);
+          }
+          return destinations;
+        }).filter((destinations) => destinations.length > 0);
+        return { boat, driftDirections };
+      })
+      .filter((candidate) => candidate.driftDirections.length > 0);
+    const chosen = movableBoats[Math.floor(random(state) * movableBoats.length)];
+    if (!chosen) {
+      return sagaCardHasNoEffect(state, `${player.name} has no Longboat that can ride a safe tide toward an enemy castle.`);
+    }
+    const chosenDirection = chosen.driftDirections[Math.floor(random(state) * chosen.driftDirections.length)]!;
+    const destination = chosenDirection[Math.floor(random(state) * chosenDirection.length)]!;
+    const from = { ...chosen.boat.position };
+    chosen.boat.position = { ...destination };
+    chosen.boat.facing = { x: 1, y: 0 };
+    for (const passenger of longboatPassengers(state, chosen.boat.id)) passenger.position = { ...destination };
+    const distance = Math.max(Math.abs(destination.x - from.x), Math.abs(destination.y - from.y));
+    return {
+      outcome: `A favourable tide carries one of ${player.name}'s Longboats ${distance} square${distance === 1 ? "" : "s"} toward the nearest enemy castle.`,
+      effects: [{ kind: "unit", unitId: chosen.boat.id, from, position: { ...destination }, label: "Favourable tide!" }],
+    };
+  }
+
+  if (cardId === "forgotten-rations") {
+    const paid = Math.min(2, player.gold);
+    if (paid <= 0) {
+      return sagaCardHasNoEffect(state, `${player.name}'s cupboards and treasury are both empty, so no rations can be replaced.`);
+    }
+    player.gold -= paid;
+    return {
+      outcome: `${player.name} spends ${paid} gold replacing the rations somebody definitely remembered packing.`,
+      effects: [{ kind: "gold", position: { ...player.castle }, label: `-${paid} ration gold`, amount: -paid }],
+    };
+  }
+
   if (cardId === "the-persuader") {
     const targets = state.units
       .filter((unit) => unit.playerId !== player.id && unit.type === "soldier" && !unit.embarkedOn)
@@ -1141,6 +1643,7 @@ function resolveEventCard(state: GameState, player: Player, cardId: EventCardId)
       position: { ...target.position },
       label: `Joined ${player.name}`,
       previousPlayerId: target.playerId,
+      previousUnit: { ...target, position: { ...target.position } },
     }));
     for (const target of targets) {
       target.playerId = player.id;
@@ -1152,18 +1655,28 @@ function resolveEventCard(state: GameState, player: Player, cardId: EventCardId)
     };
   }
 
-  const destinations = eventOpenPositionsNear(state, player.castle, 1, true);
+  const courtyardDestinations = eventOpenPositionsNear(state, player.castle, 1, true);
+  // Called Home must never overwrite a unit or any part of a multi-square
+  // unit. If the courtyard is full, expand outwards and use the nearest clear
+  // land or ice square instead of cancelling the card or stacking pieces.
+  const destinations = courtyardDestinations.length > 0
+    ? courtyardDestinations
+    : eventOpenPositionsNear(state, player.castle, Math.max(state.width, state.height), true);
   const soldier = state.units
     .filter((unit) => unit.playerId === player.id && unit.type === "soldier" && !unit.embarkedOn && eventDistance(unit.position, player.castle) > 1)
     .sort((a, b) => eventDistance(b.position, player.castle) - eventDistance(a.position, player.castle))[0];
   if (!soldier || destinations.length === 0) return undefined;
   const from = { ...soldier.position };
-  soldier.position = { ...destinations[0]! };
+  const destination = destinations[0]!;
+  soldier.position = { ...destination };
   const banked = bankTreasureAtHome(state, soldier);
+  const arrivedBesideCastle = eventDistance(destination, player.castle) === 1;
   return {
     outcome: banked
       ? `A distant Viking emerges beside ${player.name}'s castle and banks ${banked} gold.`
-      : `A distant Viking emerges beside ${player.name}'s castle.`,
+      : arrivedBesideCastle
+        ? `A distant Viking emerges beside ${player.name}'s castle.`
+        : `A distant Viking is called home to the nearest clear square around ${player.name}'s crowded castle.`,
     effects: [{
       kind: "unit",
       unitId: soldier.id,
@@ -1180,10 +1693,14 @@ export function drawEndTurnEvent(state: GameState, playerId: PlayerId) {
   if (!state.eventDeckEnabled) return undefined;
   const player = state.players.find((candidate) => candidate.id === playerId && !candidate.eliminated);
   if (!player) return undefined;
+  let reshuffled = false;
   if (state.eventDeck.length === 0) {
     state.eventDeck = shuffleEventCards(state, state.eventDiscard);
     state.eventDiscard = [];
-    if (state.eventDeck.length > 0) state.log.unshift("The saga deck is reshuffled.");
+    if (state.eventDeck.length > 0) {
+      reshuffled = true;
+      state.log.unshift("The saga deck is reshuffled.");
+    }
   }
 
   const cardsToCheck = state.eventDeck.length;
@@ -1194,7 +1711,8 @@ export function drawEndTurnEvent(state: GameState, playerId: PlayerId) {
     state.eventDiscard.push(cardId);
     if (!resolution) continue;
     state.eventSequence += 1;
-    state.lastEvent = { sequence: state.eventSequence, cardId, playerId, ...resolution };
+    state.lastEvent = { sequence: state.eventSequence, cardId, playerId, reshuffled, ...resolution };
+    battleStatsFor(state, playerId).sagaCardsDrawn += 1;
     state.log.unshift(`${player.name} draws a saga card: ${resolution.outcome}`);
     return state.lastEvent;
   }
@@ -1204,6 +1722,7 @@ export function drawEndTurnEvent(state: GameState, playerId: PlayerId) {
 /** The attacker's direct-combat chance, kept explicit for balance tests and UI explanations. */
 export function getCombatWinChance(attacker: Unit, defender: Unit): number {
   if (attacker.type === "soldier" && defender.type === "soldier") {
+    if (Boolean(attacker.rage) !== Boolean(defender.rage)) return attacker.rage ? 1 : 0;
     if (Boolean(attacker.veteran) === Boolean(defender.veteran)) return 0.5;
     return attacker.veteran ? 0.55 : 0.45;
   }
@@ -1220,7 +1739,49 @@ export function getCastleCaptureChance(attacker: Unit): number {
 function promoteWarriorAfterVictory(state: GameState, winner: Unit, loser: Unit): void {
   if (winner.type !== "soldier" || loser.type !== "soldier" || winner.veteran) return;
   winner.veteran = true;
+  battleStatsFor(state, winner.playerId).promotions += 1;
   state.log.unshift(`${capitalize(winner.playerId)}'s victorious Soldier becomes a Veteran!`);
+}
+
+/**
+ * A sober Viking who wins a direct clash claims the defeated Viking's chest.
+ * The data model deliberately allows one carried chest per Viking, so when
+ * both combatants brought treasure their loot is combined without losing any
+ * gold. Drunk Vikings remain unable to carry treasure.
+ */
+function claimDefeatedWarriorTreasure(state: GameState, winner: Unit, loser: Unit): number {
+  if (winner.type !== "soldier" || winner.drunk || loser.type !== "soldier") return 0;
+  const captured = state.treasures.filter((treasure) => treasure.carriedBy === loser.id);
+  if (captured.length === 0) return 0;
+
+  const capturedValue = captured.reduce((total, treasure) => total + treasure.value, 0);
+  const winnerTreasure = carriedTreasure(state, winner.id);
+  if (winnerTreasure) {
+    winnerTreasure.value += capturedValue;
+    const capturedIds = new Set(captured.map((treasure) => treasure.id));
+    state.treasures = state.treasures.filter((treasure) => !capturedIds.has(treasure.id));
+  } else {
+    const [claimedChest, ...extraChests] = captured;
+    claimedChest!.carriedBy = winner.id;
+    claimedChest!.position = { ...winner.position };
+    claimedChest!.value += extraChests.reduce((total, treasure) => total + treasure.value, 0);
+    const extraIds = new Set(extraChests.map((treasure) => treasure.id));
+    state.treasures = state.treasures.filter((treasure) => !extraIds.has(treasure.id));
+  }
+
+  state.log.unshift(`${capitalize(winner.playerId)} claims ${capturedValue} gold from the defeated Viking!`);
+  return capturedValue;
+}
+
+/** Consume one faction-wide Saga protection when a Longboat would be destroyed. */
+function sturdyLongboatSaves(state: GameState, boat: Unit): boolean {
+  if (boat.type !== "longboat") return false;
+  const owner = state.players.find((player) => player.id === boat.playerId);
+  if (!owner || owner.sturdyLongboatProtection <= 0) return false;
+  owner.sturdyLongboatProtection -= 1;
+  battleStatsFor(state, owner.id).sturdyLongboatSaves += 1;
+  state.log.unshift(`Sturdy Longboat! ${owner.name}'s Longboat survives the attack.`);
+  return true;
 }
 
 function resolveCombat(state: GameState, attacker: Unit, defender: Unit): boolean {
@@ -1232,25 +1793,42 @@ function resolveCombat(state: GameState, attacker: Unit, defender: Unit): boolea
     state.log.unshift(`A formerly drunk Viking joins ${newOwner?.name ?? "the attackers"} after a very persuasive scuffle!`);
     return false;
   }
+  if (attacker.type === "longboat" && defender.type === "longboat" && sturdyLongboatSaves(state, defender)) {
+    return false;
+  }
   const automaticWin =
     (attacker.type === "soldier" && defender.type === "catapult") ||
     (attacker.type === "longboat" && defender.type === "longboat");
   if (automaticWin) {
     removeUnitAndCargo(state, defender);
+    const stats = battleStatsFor(state, attacker.playerId);
+    stats.combatVictories += 1;
+    if (attacker.type === "longboat") stats.longboatsSunk += 1;
     const action = attacker.type === "longboat" ? "rams and sinks" : "overruns";
     state.log.unshift(`${capitalize(attacker.type)} ${action} the ${defender.type}!`);
     return true;
   }
+  const directVikingClash = attacker.type === "soldier" && defender.type === "soldier";
+  const attackerWasRaging = directVikingClash && Boolean(attacker.rage);
+  const defenderWasRaging = directVikingClash && Boolean(defender.rage);
   const chance = getCombatWinChance(attacker, defender);
+  // Rage is spent only by entering a direct Soldier/Veteran clash. Castle
+  // attacks, Catapults, boats and drunk conversions never consume it.
+  if (directVikingClash) {
+    attacker.rage = false;
+    defender.rage = false;
+  }
   const attackerWins = random(state) < chance;
   const winner = attackerWins ? attacker : defender;
   const loser = attackerWins ? defender : attacker;
+  claimDefeatedWarriorTreasure(state, winner, loser);
   removeUnitAndCargo(state, loser);
+  battleStatsFor(state, winner.playerId).combatVictories += 1;
   promoteWarriorAfterVictory(state, winner, loser);
   const winnerName = winner.type === "soldier" && winner.veteran ? "Veteran" : capitalize(winner.type);
   const loserName = loser.type === "soldier" && loser.veteran ? "Veteran" : capitalize(loser.type);
   state.log.unshift(
-    `${winnerName} wins a clash against ${loserName}.`,
+    `${attackerWasRaging || defenderWasRaging ? "Berserker Rage! " : ""}${winnerName} wins a clash against ${loserName}.`,
   );
   return attackerWins;
 }
@@ -1272,8 +1850,11 @@ function captureCastle(state: GameState, attacker: Unit, defender: Player): void
 }
 
 function resolveCastleAttack(state: GameState, attacker: Unit, defender: Player): boolean {
+  const stats = battleStatsFor(state, attacker.playerId);
+  stats.castleAttacks += 1;
   const chance = getCastleCaptureChance(attacker);
   if (random(state) < chance) {
+    stats.castlesCaptured += 1;
     captureCastle(state, attacker, defender);
     return true;
   }
@@ -1329,9 +1910,16 @@ export function moveUnit(state: GameState, unitId: string, destination: Position
 
   const castle = playerAtCastle(state, destination);
   if (castle && castle.id !== unit.playerId && unit.type === "soldier") {
-    // A castle is captured from the adjacent attack square. Keeping the
-    // Soldier there makes the castle remain a clear, occupied landmark and
-    // matches the treasure-deposit convention around home castles.
+    // The castle square itself is never occupied. A long straight charge
+    // finishes on the last clear square before the walls; an adjacent attack
+    // therefore finishes exactly where it began.
+    const approach = {
+      x: destination.x - Math.sign(destination.x - unit.position.x),
+      y: destination.y - Math.sign(destination.y - unit.position.y),
+    };
+    // Resolve the battle at the approach square as well, so a defeated
+    // treasure carrier drops the chest where the player saw them fall.
+    unit.position = approach;
     resolveCastleAttack(state, unit, castle);
     unit.moved = true;
     return true;
@@ -1353,19 +1941,28 @@ export function moveUnit(state: GameState, unitId: string, destination: Position
       state.log.unshift(`${capitalize(unit.playerId)} picks up a ${treasure.value} gold treasure chest.`);
     }
   }
+  relocateLooseTreasureUnderUnit(state, unit);
   if (unit.type === "soldier") bankTreasureAtHome(state, unit);
   return true;
 }
 
-function makeSoldierDrunk(state: GameState, soldier: Unit, horn: DrinkingHorn): void {
+function intoxicateSoldier(state: GameState, soldier: Unit): void {
+  if (!soldier.drunk) battleStatsFor(state, soldier.playerId).drunkenIncidents += 1;
   soldier.drunk = true;
-  state.drinkingHorns = state.drinkingHorns.filter((candidate) => candidate.id !== horn.id);
   const treasure = carriedTreasure(state, soldier.id);
   if (treasure) {
-    treasure.carriedBy = undefined;
-    treasure.position = { ...soldier.position };
-    state.log.unshift("The treasure chest is dropped as the drinking begins.");
+    const position = nearestLooseTreasurePosition(state, soldier.position);
+    if (position) {
+      treasure.carriedBy = undefined;
+      treasure.position = { ...position };
+      state.log.unshift("The treasure chest is dropped nearby as the drinking begins.");
+    }
   }
+}
+
+function makeSoldierDrunk(state: GameState, soldier: Unit, horn: DrinkingHorn): void {
+  intoxicateSoldier(state, soldier);
+  state.drinkingHorns = state.drinkingHorns.filter((candidate) => candidate.id !== horn.id);
   state.log.unshift(`${capitalize(soldier.playerId)}'s Viking drinks from a horn and becomes gloriously drunk!`);
 }
 
@@ -1419,6 +2016,11 @@ function removeUnitAndCargo(state: GameState, unit: Unit): void {
     for (const passenger of longboatPassengers(state, unit.id)) removed.add(passenger.id);
     if (removed.size > 1) state.log.unshift(`${removed.size - 1} embarked Viking${removed.size === 2 ? "" : "s"} go down with the longboat.`);
   }
+  for (const casualty of state.units.filter((candidate) => removed.has(candidate.id))) {
+    const stats = battleStatsFor(state, casualty.playerId);
+    stats.unitsLost += 1;
+    if (casualty.type === "longboat") stats.longboatsLost += 1;
+  }
   const sunkTreasureIds = new Set<string>();
   for (const treasure of state.treasures) {
     if (!treasure.carriedBy || !removed.has(treasure.carriedBy)) continue;
@@ -1447,7 +2049,7 @@ function disembarkCellsForBoat(state: GameState, boat: Unit): Position[] {
           isInside(state, cell) &&
           ["land", "ice"].includes(terrainAt(state, cell)) &&
           !unitAt(state, cell) &&
-          !playerAtCastle(state, cell)
+          !movementObstacleAt(state, cell)
         ) cells.set(positionKey(cell), cell);
       }
     }
@@ -1484,13 +2086,21 @@ function evacuateFrozenLongboats(state: GameState): void {
   }
 }
 
-export function disembarkSoldier(state: GameState, boatId: string, destination: Position): boolean {
+export function disembarkSoldier(
+  state: GameState,
+  boatId: string,
+  destination: Position,
+  passengerId?: string,
+): boolean {
   const legal = getDisembarkCells(state, boatId).some(
     (cell) => cell.x === destination.x && cell.y === destination.y,
   );
   if (!legal) return false;
   forfeitPendingCatapultFire(state);
-  const passenger = longboatPassengers(state, boatId)[0];
+  const passengers = longboatPassengers(state, boatId);
+  const passenger = passengerId
+    ? passengers.find((candidate) => candidate.id === passengerId)
+    : passengers[0];
   if (!passenger) return false;
   passenger.embarkedOn = undefined;
   passenger.position = { ...destination };
@@ -1628,15 +2238,29 @@ export function fireCatapult(state: GameState, unitId: string, target: Position)
   catapult.pendingFireAfterMove = false;
   state.lastShot = { aimedAt: { ...target }, landedAt, scatterRadius };
   const attacker = state.players.find((player) => player.id === catapult.playerId);
+  const firingStats = battleStatsFor(state, catapult.playerId);
+  firingStats.catapultShots += 1;
+  if (impact) {
+    firingStats.catapultHits += 1;
+    if (impact.playerId === catapult.playerId) firingStats.friendlyFireHits += 1;
+  }
   const offset = Math.max(Math.abs(scatterX), Math.abs(scatterY));
   const accuracyText = offset === 0 ? "dead on target" : `${offset} square${offset === 1 ? "" : "s"} off target`;
-  if (impact?.type === "soldier" && impact.drunk && impact.playerId !== catapult.playerId) {
+  if (impact?.type === "soldier" && impact.shieldWall) {
+    impact.shieldWall = false;
+    const allegiance = impact.playerId === catapult.playerId ? "friendly" : "enemy";
+    state.log.unshift(`${attacker?.name ?? "A"} catapult lands ${accuracyText}, but the ${allegiance} Viking's Shield Wall holds!`);
+  } else if (impact?.type === "soldier" && impact.drunk && impact.playerId !== catapult.playerId) {
     impact.playerId = catapult.playerId;
     impact.drunk = false;
     impact.moved = true;
     state.log.unshift(`${attacker?.name ?? "A"} catapult lands ${accuracyText} and convinces a formerly drunk Viking to change sides!`);
+  } else if (impact?.type === "longboat" && sturdyLongboatSaves(state, impact)) {
+    const allegiance = impact.playerId === catapult.playerId ? "friendly" : "enemy";
+    state.log.unshift(`${attacker?.name ?? "A"} catapult lands ${accuracyText}, but a Sturdy Longboat saves the ${allegiance} vessel!`);
   } else if (impact) {
     removeUnitAndCargo(state, impact);
+    if (impact.type === "longboat") firingStats.longboatsSunk += 1;
     const allegiance = impact.playerId === catapult.playerId ? "friendly" : "enemy";
     const outcome = impact.type === "longboat" ? "sinks" : "hits";
     state.log.unshift(`${attacker?.name ?? "A"} catapult lands ${accuracyText} and ${outcome} a ${allegiance} ${impact.type}!`);
@@ -1661,7 +2285,7 @@ function purchasePositions(state: GameState, player: Player, type: UnitType): Po
           ? canPlaceLongboat(state, position, { x: 1, y: 0 })
           : type === "catapult"
             ? canPlaceCatapult(state, position)
-          : UNIT_RULES[type].terrain.includes(terrainAt(state, position))
+          : UNIT_RULES[type].terrain.includes(terrainAt(state, position)) && !movementObstacleAt(state, position)
       ) positions.push(position);
     }
   }
@@ -1696,6 +2320,7 @@ export function buyUnit(state: GameState, playerId: PlayerId, type: UnitType): b
     fired: true,
     facing: type === "longboat" ? { x: 1, y: 0 } : undefined,
   });
+  battleStatsFor(state, playerId).unitsPurchased[type] += 1;
   state.log.unshift(`${player.name} hires a ${UNIT_RULES[type].name.toLowerCase()}.`);
   return true;
 }
@@ -1715,7 +2340,15 @@ export function endTurn(state: GameState): boolean {
   // A carrier does not need to step away and back again. This also repairs a
   // delivery if an older game state left the Soldier waiting beside home.
   bankWaitingTreasure(state, endingPlayer.id);
-  drawEndTurnEvent(state, endingPlayer.id);
+  state.completedTurns += 1;
+  // Round 1 is deliberately card-free so every faction can establish itself
+  // before fate begins meddling. Thereafter, Every turn draws each round and
+  // Every two turns draws only during even-numbered rounds.
+  const sagaDue = state.round >= 2 && (
+    state.eventCardFrequency === "every-turn"
+    || (state.eventCardFrequency === "every-two-turns" && state.round % 2 === 0)
+  );
+  if (sagaDue) drawEndTurnEvent(state, endingPlayer.id);
   const currentIndex = state.activePlayerIndex;
   let nextIndex = currentIndex;
   do {

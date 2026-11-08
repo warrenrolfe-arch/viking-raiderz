@@ -1,7 +1,10 @@
 import { carriedTreasure, playerAtCastle, positionKey, unitAt, unitFootprint } from "./core";
-import type { GameState, Position, Unit } from "./types";
+import type { DrinkingHorn, GameState, PlayerId, Position, Unit } from "./types";
 
-export type ArrivalKind = "battle-won" | "ship-sunk" | "repelled" | "castle" | "treasure" | "deposit" | "boarding";
+export type ArrivalKind = "battle-won" | "ship-sunk" | "sturdy-longboat" | "repelled" | "converted" | "castle" | "treasure" | "deposit" | "boarding" | "drinking";
+
+/** Castle attacks always hold their outcome for this fixed suspense period. */
+export const CASTLE_ASSAULT_DURATION_MS = 3_000;
 
 export interface MovementPresentation {
   unit: Unit;
@@ -11,6 +14,8 @@ export interface MovementPresentation {
   sunkUnit?: Unit;
   destroyedUnit?: Unit;
   becameDrunk?: boolean;
+  /** Visual-only copy of the consumed horn, retained until the Soldier reaches it. */
+  consumedHorn?: DrinkingHorn;
   soberedUp?: boolean;
   /** Visual-only record for a normal Soldier/Veteran clash. */
   directClash?: {
@@ -18,6 +23,24 @@ export interface MovementPresentation {
     defender: Unit;
     attackerWon: boolean;
   };
+  /** A drunk defender changes allegiance while both units remain on their real squares. */
+  drunkConversion?: {
+    attacker: Unit;
+    defenderBefore: Unit;
+    defenderAfter: Unit;
+  };
+  /** Visual-only castle assault snapshot; core combat has already resolved. */
+  castleAssault?: {
+    attacker: Unit;
+    castlePlayerId: PlayerId;
+    attackerWon: boolean;
+    /** Last clear square before the castle; the attacker never enters the walls. */
+    attackPosition: Position;
+    /** Saga log before rules resolve, so the outcome cannot leak early. */
+    logBeforeAttack: string[];
+  };
+  /** Pre-capture colours retained until the victory result appears. */
+  capturedUnits?: Unit[];
 }
 
 interface MovementContext {
@@ -28,9 +51,13 @@ interface MovementContext {
   targetUnitPlayerId?: string;
   targetUnitType?: Unit["type"];
   targetUnit?: Unit;
-  targetCastlePlayerId?: string;
+  targetCastlePlayerId?: PlayerId;
+  castleDefenderUnits?: Unit[];
+  logBeforeCastleAttack?: string[];
   treasureId?: string;
   carriedTreasureId?: string;
+  drinkingHorn?: DrinkingHorn;
+  targetSturdyProtectionBefore?: number;
 }
 
 /** Capture the small amount of pre-move state needed for presentation after rules resolve. */
@@ -69,8 +96,24 @@ export function captureMovementContext(
       ? { ...target, position: { ...target.position }, facing: target.facing ? { ...target.facing } : undefined }
       : undefined,
     targetCastlePlayerId: castle?.id,
+    castleDefenderUnits: castle
+      ? state.units
+          .filter((candidate) => candidate.playerId === castle.id)
+          .map((candidate) => ({
+            ...candidate,
+            position: { ...candidate.position },
+            facing: candidate.facing ? { ...candidate.facing } : undefined,
+          }))
+      : undefined,
+    logBeforeCastleAttack: castle ? [...state.log] : undefined,
     treasureId: treasure?.id,
     carriedTreasureId: carriedTreasure(state, unit.id)?.id,
+    drinkingHorn: state.drinkingHorns.find(
+      (horn) => horn.position.x === destination.x && horn.position.y === destination.y,
+    ),
+    targetSturdyProtectionBefore: target?.type === "longboat"
+      ? state.players.find((player) => player.id === target.playerId)?.sturdyLongboatProtection
+      : undefined,
   };
 }
 
@@ -89,9 +132,19 @@ export function completeMovementPresentation(
     context.targetUnit?.type === "soldier" &&
     context.targetUnit.playerId !== context.unit.playerId &&
     !context.targetUnit.drunk;
+  const becameDrunk = context.unit.type === "soldier" && !context.unit.drunk && Boolean(mover?.drunk);
+  const convertedDrunk = Boolean(
+    context.targetUnit?.type === "soldier" &&
+    context.targetUnit.drunk &&
+    target &&
+    !target.drunk &&
+    target.playerId === context.unit.playerId,
+  );
   let arrival: ArrivalKind | undefined;
 
-  if (context.targetCastlePlayerId) {
+  if (becameDrunk && context.drinkingHorn) {
+    arrival = "drinking";
+  } else if (context.targetCastlePlayerId) {
     const castleOwner = state.players.find((player) => player.id === context.targetCastlePlayerId);
     arrival = castleOwner?.eliminated ? "castle" : !mover ? "repelled" : undefined;
   } else if (mover?.embarkedOn) {
@@ -104,8 +157,21 @@ export function completeMovementPresentation(
     (treasure) => treasure.id === context.carriedTreasureId,
   )) {
     arrival = "deposit";
+  } else if (convertedDrunk) {
+    arrival = "converted";
   } else if (context.targetUnitId && context.targetUnitPlayerId !== context.unit.playerId) {
-    arrival = context.unit.type === "longboat" && context.targetUnitType === "longboat" && mover && !target
+    const targetOwner = context.targetUnitPlayerId
+      ? state.players.find((player) => player.id === context.targetUnitPlayerId)
+      : undefined;
+    const sturdyLongboatSaved =
+      context.unit.type === "longboat" &&
+      context.targetUnitType === "longboat" &&
+      Boolean(mover) &&
+      Boolean(target) &&
+      (context.targetSturdyProtectionBefore ?? 0) > (targetOwner?.sturdyLongboatProtection ?? 0);
+    arrival = sturdyLongboatSaved
+      ? "sturdy-longboat"
+      : context.unit.type === "longboat" && context.targetUnitType === "longboat" && mover && !target
       ? "ship-sunk"
       : mover && !target ? "battle-won" : !mover ? "repelled" : "battle-won";
   }
@@ -117,7 +183,10 @@ export function completeMovementPresentation(
     arrival,
     sunkUnit: arrival === "ship-sunk" ? context.targetUnit : undefined,
     destroyedUnit,
-    becameDrunk: context.unit.type === "soldier" && !context.unit.drunk && Boolean(mover?.drunk),
+    becameDrunk,
+    consumedHorn: becameDrunk && context.drinkingHorn
+      ? { ...context.drinkingHorn, position: { ...context.drinkingHorn.position } }
+      : undefined,
     soberedUp: Boolean(context.targetUnit?.drunk && target && !target.drunk),
     directClash: isDirectClash
       ? {
@@ -125,6 +194,34 @@ export function completeMovementPresentation(
           defender: context.targetUnit!,
           attackerWon: Boolean(mover) && !target,
         }
+      : undefined,
+    drunkConversion: convertedDrunk && target
+      ? {
+          attacker: context.unit,
+          defenderBefore: context.targetUnit!,
+          defenderAfter: { ...target, position: { ...target.position } },
+        }
+      : undefined,
+    castleAssault: context.targetCastlePlayerId
+      ? {
+          attacker: context.unit,
+          castlePlayerId: context.targetCastlePlayerId,
+          attackerWon: Boolean(state.players.find(
+            (player) => player.id === context.targetCastlePlayerId,
+          )?.eliminated),
+          attackPosition: mover
+            ? { ...mover.position }
+            : {
+                x: context.to.x - Math.sign(context.to.x - context.from.x),
+                y: context.to.y - Math.sign(context.to.y - context.from.y),
+              },
+          logBeforeAttack: context.logBeforeCastleAttack ?? [],
+        }
+      : undefined,
+    capturedUnits: context.targetCastlePlayerId && state.players.find(
+      (player) => player.id === context.targetCastlePlayerId,
+    )?.eliminated
+      ? context.castleDefenderUnits
       : undefined,
   };
 }

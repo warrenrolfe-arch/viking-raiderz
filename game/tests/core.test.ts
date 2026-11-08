@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   activePlayer,
   advanceWinter,
+  BENIGN_SAGA_CARD_POOL,
+  BENIGN_SAGA_CARDS_PER_MATCH,
   BOARD_WIDTH,
   buyUnit,
   canBuyUnit,
@@ -26,16 +28,18 @@ import {
   moveDrunkSoldier,
   positionKey,
   skipPendingCatapultFire,
+  terrainAt,
   TURN_INCOME,
   UNIT_RULES,
   WINTER_EARLIEST_ROUND,
   WINTER_LATEST_ROUND,
   WINTER_PHASES,
+  unitAt,
   unitFootprint,
 } from "../src/core";
 import { AI_PURCHASE_LIMIT, chooseAiCatapultTarget, chooseAiDisembark, chooseAiMove, chooseAiPurchase } from "../src/ai";
 import { executeComputerTurn } from "../src/simulation";
-import { captureMovementContext, completeMovementPresentation } from "../src/movementPresentation";
+import { CASTLE_ASSAULT_DURATION_MS, captureMovementContext, completeMovementPresentation } from "../src/movementPresentation";
 import { captureShotContext, completeShotPresentation } from "../src/shotPresentation";
 import type { Difficulty, GameState, PlayerId, PlayerSetup, Unit } from "../src/types";
 
@@ -44,6 +48,13 @@ const setups: PlayerSetup[] = [
   { id: "red", controller: "normal" },
   { id: "pink", controller: "off" },
   { id: "green", controller: "off" },
+];
+
+const fourPlayerSetups: PlayerSetup[] = [
+  { id: "blue", controller: "human" },
+  { id: "red", controller: "normal" },
+  { id: "pink", controller: "normal" },
+  { id: "green", controller: "normal" },
 ];
 
 /** Catapults are no longer starting units, so focused Catapult tests create their own. */
@@ -74,11 +85,26 @@ describe("game rules", () => {
     expect(state.players.every((player) => player.gold === 50)).toBe(true);
     expect(state.treasures).toHaveLength(2);
     expect(state.drinkingHorns).toHaveLength(4);
-    expect(state.eventDeck).toHaveLength(17);
-    expect(new Set(state.eventDeck)).toEqual(new Set(EVENT_CARDS));
+    expect(state.eventCardFrequency).toBe("every-two-turns");
+    expect(state.eventDeck).toHaveLength(40);
+    expect(EVENT_CARDS).toHaveLength(30);
+    expect(BENIGN_SAGA_CARD_POOL).toHaveLength(32);
+    expect(state.eventDeck.filter((card) => BENIGN_SAGA_CARD_POOL.includes(card))).toHaveLength(BENIGN_SAGA_CARDS_PER_MATCH);
+    expect(state.eventDeck.filter((card) => !BENIGN_SAGA_CARD_POOL.includes(card))).toHaveLength(EVENT_CARDS.length);
+    for (const card of EVENT_CARDS) expect(state.eventDeck).toContain(card);
+    expect(state.eventDeck.filter((card) => card === "bad-viking")).toHaveLength(2);
+    expect(state.eventDeck.filter((card) => card === "sturdy-longboat")).toHaveLength(2);
+    expect(state.eventDeck.filter((card) => card === "yule-festival")).toHaveLength(1);
+    expect(state.eventDeck.filter((card) => card === "berserker-rage")).toHaveLength(2);
+    expect(state.eventDeck.filter((card) => card === "high-winds")).toHaveLength(1);
+    expect(state.eventDeck.filter((card) => card === "shield-wall")).toHaveLength(1);
+    expect(state.eventDeck.filter((card) => card === "favourable-tide")).toHaveLength(1);
+    expect(state.eventDeck.filter((card) => card === "forgotten-rations")).toHaveLength(1);
+    const repeated = createGame(setups);
+    expect(repeated.eventDeck).toEqual(state.eventDeck);
     expect(state.treasures.every((chest) => chest.value >= 10 && chest.value <= 50 && chest.value % 10 === 0)).toBe(true);
     expect(UNIT_RULES.soldier.cost).toBe(2);
-    expect(UNIT_RULES.longboat.cost).toBe(5);
+    expect(UNIT_RULES.longboat.cost).toBe(4);
     expect(UNIT_RULES.catapult.cost).toBe(8);
     for (const player of state.players) {
       const startingUnits = state.units.filter((unit) => unit.playerId === player.id);
@@ -93,11 +119,57 @@ describe("game rules", () => {
     const endingPlayer = activePlayer(state);
 
     expect(state.eventDeckEnabled).toBe(false);
+    expect(state.eventCardFrequency).toBe("off");
     expect(state.eventDeck).toEqual([]);
     expect(drawEndTurnEvent(state, endingPlayer.id)).toBeUndefined();
     finishTurn(state);
     expect(state.lastEvent).toBeUndefined();
     expect(state.eventDeck).toEqual([]);
+  });
+
+  it("keeps round 1 card-free, then draws after every faction turn when set to Every turn", () => {
+    const state = createGame(fourPlayerSetups, 19, { eventCardFrequency: "every-turn" });
+    state.eventDeck = Array.from({ length: 8 }, () => "royal-ransom");
+
+    for (let turn = 0; turn < 4; turn += 1) finishTurn(state);
+    expect(state.eventSequence).toBe(0);
+    expect(state.lastEvent).toBeUndefined();
+    expect(state.round).toBe(2);
+
+    for (let turn = 1; turn <= 4; turn += 1) {
+      const endingPlayerId = activePlayer(state).id;
+      finishTurn(state);
+      expect(state.lastEvent).toMatchObject({ sequence: turn, cardId: "royal-ransom", playerId: endingPlayerId });
+    }
+    expect(state.round).toBe(3);
+  });
+
+  it("draws for every faction in even rounds when saga cards are set to Every two turns", () => {
+    const state = createGame(fourPlayerSetups, 19, { eventCardFrequency: "every-two-turns" });
+    state.eventDeck = Array.from({ length: 8 }, () => "royal-ransom");
+
+    for (let turn = 0; turn < 4; turn += 1) finishTurn(state);
+    expect(state.eventSequence).toBe(0);
+    expect(state.lastEvent).toBeUndefined();
+    expect(state.round).toBe(2);
+
+    for (let turn = 1; turn <= 4; turn += 1) {
+      const endingPlayerId = activePlayer(state).id;
+      finishTurn(state);
+      expect(state.lastEvent).toMatchObject({ sequence: turn, cardId: "royal-ransom", playerId: endingPlayerId });
+    }
+    expect(state.round).toBe(3);
+
+    for (let turn = 0; turn < 4; turn += 1) finishTurn(state);
+    expect(state.eventSequence).toBe(4);
+    expect(state.round).toBe(4);
+
+    for (let turn = 5; turn <= 8; turn += 1) {
+      const endingPlayerId = activePlayer(state).id;
+      finishTurn(state);
+      expect(state.lastEvent).toMatchObject({ sequence: turn, cardId: "royal-ransom", playerId: endingPlayerId });
+    }
+    expect(state.round).toBe(5);
   });
 
   it("seedably schedules optional winter after a completed round from 4 to 10", () => {
@@ -393,7 +465,28 @@ describe("game rules", () => {
     expect(soldier.drunk).toBe(true);
     expect(drinkingHornAt(state, { x: 11, y: 10 })).toBeUndefined();
     expect(carriedTreasure(state, soldier.id)).toBeUndefined();
-    expect(state.treasures[0]?.position).toEqual({ x: 11, y: 10 });
+    expect(state.treasures[0]?.position).not.toEqual(soldier.position);
+    expect(unitAt(state, state.treasures[0]!.position)).toBeUndefined();
+    expect(drinkingHornAt(state, state.treasures[0]!.position)).toBeUndefined();
+  });
+
+  it("retains a consumed Drinking Horn in the movement presentation until contact", () => {
+    const state = createGame(setups);
+    const soldier = state.units.find((unit) => unit.playerId === "blue" && unit.type === "soldier")!;
+    soldier.position = { x: 10, y: 10 };
+    state.terrain[10 * state.width + 10] = "land";
+    state.terrain[10 * state.width + 11] = "land";
+    state.units = [soldier];
+    state.drinkingHorns = [{ id: "visible-horn", position: { x: 11, y: 10 } }];
+    const context = captureMovementContext(state, soldier.id, { x: 11, y: 10 })!;
+
+    expect(moveUnit(state, soldier.id, { x: 11, y: 10 })).toBe(true);
+    const presentation = completeMovementPresentation(state, context);
+
+    expect(state.drinkingHorns).toHaveLength(0);
+    expect(presentation.becameDrunk).toBe(true);
+    expect(presentation.consumedHorn).toEqual({ id: "visible-horn", position: { x: 11, y: 10 } });
+    expect(presentation.arrival).toBe("drinking");
   });
 
   it("makes a Drinking Horn stop a Soldier instead of allowing movement through it", () => {
@@ -468,16 +561,25 @@ describe("game rules", () => {
     const blueSoldier = state.units.find((unit) => unit.playerId === "blue" && unit.type === "soldier")!;
     const redSoldier = state.units.find((unit) => unit.playerId === "red" && unit.type === "soldier")!;
     blueSoldier.position = { x: 10, y: 10 };
-    redSoldier.position = { x: 11, y: 10 };
+    redSoldier.position = { x: 15, y: 10 };
     redSoldier.drunk = true;
-    for (let x = 10; x <= 12; x += 1) state.terrain[10 * state.width + x] = "land";
+    for (let x = 10; x <= 15; x += 1) state.terrain[10 * state.width + x] = "land";
     state.units = [blueSoldier, redSoldier];
 
+    const conversionContext = captureMovementContext(state, blueSoldier.id, redSoldier.position)!;
     expect(moveUnit(state, blueSoldier.id, redSoldier.position)).toBe(true);
+    const conversionPresentation = completeMovementPresentation(state, conversionContext);
     expect(redSoldier.playerId).toBe("blue");
-    expect(redSoldier.position).toEqual({ x: 11, y: 10 });
+    expect(redSoldier.position).toEqual({ x: 15, y: 10 });
     expect(redSoldier.drunk).toBe(false);
     expect(blueSoldier.moved).toBe(true);
+    expect(blueSoldier.position).toEqual({ x: 10, y: 10 });
+    expect(conversionPresentation.arrival).toBe("converted");
+    expect(conversionPresentation.drunkConversion).toMatchObject({
+      attacker: { id: blueSoldier.id, position: { x: 10, y: 10 } },
+      defenderBefore: { id: redSoldier.id, playerId: "red", drunk: true, position: { x: 15, y: 10 } },
+      defenderAfter: { id: redSoldier.id, playerId: "blue", drunk: false, position: { x: 15, y: 10 } },
+    });
 
     blueSoldier.moved = false;
     blueSoldier.drunk = true;
@@ -556,6 +658,68 @@ describe("game rules", () => {
     }
     const averageCentre = combinedCentre / samples;
     expect(Math.abs(averageCentre - (BOARD_WIDTH - 1) / 2)).toBeLessThan(0.75);
+  });
+
+  it("gives classic outer fjords gentle bank variation without breaking Longboat routes", () => {
+    for (const seed of [3, 6, 9, 12, 15, 18]) {
+      const state = createGame(setups, seed);
+      const water = new Set<string>();
+      for (let y = 0; y < state.height; y += 1) {
+        for (let x = 0; x < state.width; x += 1) {
+          if (state.terrain[y * state.width + x] === "water") water.add(`${x},${y}`);
+        }
+      }
+
+      const waterColumns = [...water].map((key) => Number(key.split(",")[0]));
+      const left = Math.min(...waterColumns);
+      const right = Math.max(...waterColumns);
+      const topBank = new Set<number>();
+      const bottomBank = new Set<number>();
+      for (let x = left + 5; x <= right - 5; x += 1) {
+        const columnWater = Array.from({ length: state.height }, (_, y) => y)
+          .filter((y) => water.has(`${x},${y}`));
+        topBank.add(Math.min(...columnWater));
+        bottomBank.add(Math.max(...columnWater));
+      }
+      expect(topBank.size, `classic top bank on seed ${seed} should not be ruler-straight`).toBeGreaterThan(1);
+      expect(bottomBank.size, `classic bottom bank on seed ${seed} should not be ruler-straight`).toBeGreaterThan(1);
+
+      const boatCentres = new Set<string>();
+      for (let y = 0; y < state.height; y += 1) {
+        for (let x = 1; x < state.width - 1; x += 1) {
+          if ([-1, 0, 1].every((offset) => water.has(`${x + offset},${y}`))) boatCentres.add(`${x},${y}`);
+        }
+      }
+      const unseenCentres = new Set(boatCentres);
+      const routeSizes: number[] = [];
+      while (unseenCentres.size > 0) {
+        const first = unseenCentres.values().next().value as string;
+        const [startX, startY] = first.split(",").map(Number) as [number, number];
+        const reachable = new Set([first]);
+        const queue = [{ x: startX, y: startY }];
+        unseenCentres.delete(first);
+        while (queue.length > 0) {
+          const current = queue.shift()!;
+          for (const dx of [-1, 0, 1]) {
+            for (const dy of [-1, 0, 1]) {
+              if (dx === 0 && dy === 0) continue;
+              const key = `${current.x + dx},${current.y + dy}`;
+              if (boatCentres.has(key) && !reachable.has(key)) {
+                reachable.add(key);
+                unseenCentres.delete(key);
+                queue.push({ x: current.x + dx, y: current.y + dy });
+              }
+            }
+          }
+        }
+        routeSizes.push(reachable.size);
+      }
+      // The short detached inner inlet is intentional. At a broad corner a
+      // few harmless fringe centre positions can also form their own tiny
+      // cluster, so assess the actual outer sailing circuit rather than the
+      // raw number of possible centre-position clusters.
+      expect(Math.max(...routeSizes), `outer Longboat route on seed ${seed} must remain continuous`).toBeGreaterThan(40);
+    }
   });
 
   it("places every castle on shared land with a route to an opponent", () => {
@@ -676,10 +840,47 @@ describe("game rules", () => {
     expect(longboatPassengers(state, boat.id)).toHaveLength(1);
     expect(getLegalMoves(state, soldiers[0]!.id)).toEqual([]);
 
+    const chestShore = getDisembarkCells(state, boat.id)[0]!;
+    state.treasures = [{ id: "blocked-shore-chest", value: 10, position: { ...chestShore } }];
+    expect(getDisembarkCells(state, boat.id)).not.toContainEqual(chestShore);
     const shore = getDisembarkCells(state, boat.id)[0]!;
     expect(disembarkSoldier(state, boat.id, shore)).toBe(true);
     expect(longboatPassengers(state, boat.id)).toHaveLength(0);
     expect(soldiers[0]!.position).toEqual(shore);
+  });
+
+  it("disembarks the chosen treasure-carrying Veteran without losing the chest", () => {
+    const state = createGame(setups, 47, { eventDeckEnabled: false });
+    const blue = state.players.find((player) => player.id === "blue")!;
+    const boat = state.units.find((unit) => unit.playerId === "blue" && unit.type === "longboat")!;
+    const [ordinary, carrier] = state.units.filter(
+      (unit) => unit.playerId === "blue" && unit.type === "soldier",
+    );
+    blue.castle = { x: 2, y: 2 };
+    boat.position = { x: 15, y: 10 };
+    boat.facing = { x: 1, y: 0 };
+    ordinary!.position = { ...boat.position };
+    ordinary!.embarkedOn = boat.id;
+    carrier!.position = { ...boat.position };
+    carrier!.embarkedOn = boat.id;
+    carrier!.veteran = true;
+    state.terrain.fill("land");
+    for (const cell of unitFootprint(boat)) state.terrain[cell.y * state.width + cell.x] = "water";
+    state.units = [boat, ordinary!, carrier!];
+    state.treasures = [{
+      id: "voyage-chest",
+      value: 30,
+      position: { ...boat.position },
+      carriedBy: carrier!.id,
+    }];
+
+    const shore = getDisembarkCells(state, boat.id)[0]!;
+    expect(disembarkSoldier(state, boat.id, shore, carrier!.id)).toBe(true);
+
+    expect(carrier!.embarkedOn).toBeUndefined();
+    expect(carrier!.position).toEqual(shore);
+    expect(ordinary!.embarkedOn).toBe(boat.id);
+    expect(carriedTreasure(state, carrier!.id)).toMatchObject({ id: "voyage-chest", value: 30 });
   });
 
   it("keeps multi-square units on the board when they move across their own old footprint", () => {
@@ -894,6 +1095,55 @@ describe("game rules", () => {
     expect(shotPresentation?.sunkUnit?.id).toBe(boat.id);
   });
 
+  it("uses Sturdy Longboat protection on the next ram or Catapult hit", () => {
+    const ramState = createGame(setups);
+    const blueBoat = ramState.units.find((unit) => unit.playerId === "blue" && unit.type === "longboat")!;
+    const redBoat = ramState.units.find((unit) => unit.playerId === "red" && unit.type === "longboat")!;
+    const red = ramState.players.find((player) => player.id === "red")!;
+    ramState.eventDeck = ["sturdy-longboat"];
+    const sturdyCard = drawEndTurnEvent(ramState, "red");
+    expect(sturdyCard?.effects[0]).toMatchObject({ kind: "protection", label: "Next Longboat protected!" });
+    expect(red.sturdyLongboatProtection).toBe(1);
+
+    blueBoat.position = { x: 10, y: 14 };
+    redBoat.position = { x: 13, y: 14 };
+    blueBoat.moved = false;
+    for (let x = 9; x <= 15; x += 1) ramState.terrain[14 * ramState.width + x] = "water";
+    ramState.units = [blueBoat, redBoat];
+    const ramContext = captureMovementContext(ramState, blueBoat.id, { x: 11, y: 14 });
+    expect(moveUnit(ramState, blueBoat.id, { x: 11, y: 14 })).toBe(true);
+    expect(ramState.units).toContain(redBoat);
+    expect(ramState.units).toContain(blueBoat);
+    expect(red.sturdyLongboatProtection).toBe(0);
+    expect(ramState.log.some((entry) => entry.includes("Sturdy Longboat!"))).toBe(true);
+    expect(completeMovementPresentation(ramState, ramContext!).arrival).toBe("sturdy-longboat");
+
+    const shotState = createGame(setups);
+    const catapult = testCatapult(shotState, "blue");
+    const targetBoat = shotState.units.find((unit) => unit.playerId === "red" && unit.type === "longboat")!;
+    const targetOwner = shotState.players.find((player) => player.id === "red")!;
+    catapult.position = { x: 4, y: 4 };
+    targetBoat.position = { x: 10, y: 3 };
+    shotState.terrain[4 * shotState.width + 4] = "land";
+    shotState.terrain[4 * shotState.width + 5] = "land";
+    for (let x = 9; x <= 11; x += 1) shotState.terrain[3 * shotState.width + x] = "water";
+    shotState.units = [catapult, targetBoat];
+    shotState.eventDeck = ["sturdy-longboat"];
+    drawEndTurnEvent(shotState, "red");
+    shotState.seed = 0;
+    const shotContext = captureShotContext(shotState, catapult.id, { x: 10, y: 4 });
+    expect(fireCatapult(shotState, catapult.id, { x: 10, y: 4 })).toBe(true);
+    expect(shotState.units).toContain(targetBoat);
+    expect(targetOwner.sturdyLongboatProtection).toBe(0);
+    expect(completeShotPresentation(shotState, shotContext!)?.impact).toBe("sturdy-longboat");
+
+    catapult.fired = false;
+    catapult.moved = false;
+    shotState.seed = 0;
+    expect(fireCatapult(shotState, catapult.id, { x: 10, y: 4 })).toBe(true);
+    expect(shotState.units).not.toContain(targetBoat);
+  });
+
   it("does not let Catapults deliberately target friendly units", () => {
     const state = createGame(setups);
     const catapult = testCatapult(state, "blue");
@@ -918,6 +1168,35 @@ describe("game rules", () => {
     expect(state.log[0]).not.toContain("hits");
   });
 
+  it("shows and consumes Shield Wall when it saves a Viking from one Catapult impact", () => {
+    const state = createGame(setups);
+    const catapult = testCatapult(state, "blue");
+    const target = state.units.find((unit) => unit.playerId === "red" && unit.type === "soldier")!;
+    catapult.position = { x: 4, y: 4 };
+    target.position = { x: 10, y: 3 };
+    state.terrain[4 * state.width + 4] = "land";
+    state.terrain[4 * state.width + 5] = "land";
+    state.terrain[3 * state.width + 10] = "land";
+    state.units = [catapult, target];
+    state.eventDeck = ["shield-wall"];
+    const event = drawEndTurnEvent(state, "red");
+    expect(event?.effects[0]).toMatchObject({ unitId: target.id, label: "SHIELD WALL!" });
+    expect(target.shieldWall).toBe(true);
+
+    state.seed = 0;
+    const context = captureShotContext(state, catapult.id, { x: 10, y: 4 });
+    expect(fireCatapult(state, catapult.id, { x: 10, y: 4 })).toBe(true);
+    expect(state.units).toContain(target);
+    expect(target.shieldWall).toBe(false);
+    expect(completeShotPresentation(state, context!)?.impact).toBe("shield-wall");
+
+    catapult.fired = false;
+    catapult.moved = false;
+    state.seed = 0;
+    expect(fireCatapult(state, catapult.id, { x: 10, y: 4 })).toBe(true);
+    expect(state.units).not.toContain(target);
+  });
+
   it("purchases units with gold", () => {
     const state = createGame(setups);
     const goldBefore = activePlayer(state).gold;
@@ -930,12 +1209,31 @@ describe("game rules", () => {
     expect(getLegalMoves(state, startingSoldier.id)).toEqual([]);
     expect(buyUnit(state, "blue", "soldier")).toBe(true);
     expect(activePlayer(state).gold).toBe(goldBefore - 2);
+    expect(state.battleStats.blue?.unitsPurchased.soldier).toBe(1);
     const hired = state.units[state.units.length - 1]!;
     const castle = activePlayer(state).castle;
     expect(Math.max(Math.abs(hired.position.x - castle.x), Math.abs(hired.position.y - castle.y))).toBe(1);
     expect(endTurn(state)).toBe(true);
     expect(state.turnPhase).toBe("movement");
     expect(activePlayer(state).id).toBe("red");
+  });
+
+  it("never purchases a Viking on top of a treasure chest", () => {
+    const state = createGame(setups);
+    const blue = activePlayer(state);
+    blue.castle = { x: 10, y: 10 };
+    state.units = state.units.filter((unit) => unit.playerId !== blue.id);
+    for (let y = 9; y <= 11; y += 1) {
+      for (let x = 9; x <= 11; x += 1) state.terrain[y * state.width + x] = "land";
+    }
+    state.treasures = [{ id: "courtyard-chest", value: 20, position: { x: 9, y: 9 } }];
+    state.drinkingHorns = [];
+
+    expect(completeManoeuvres(state)).toBe(true);
+    expect(buyUnit(state, blue.id, "soldier")).toBe(true);
+    const recruit = state.units.find((unit) => unit.playerId === blue.id)!;
+    expect(recruit.position).not.toEqual({ x: 9, y: 9 });
+    expect(state.treasures[0]?.position).toEqual({ x: 9, y: 9 });
   });
 
   it("never reuses a surviving treasure carrier's unit identifier after casualties", () => {
@@ -1001,7 +1299,9 @@ describe("game rules", () => {
     expect(state.eventDeck).toEqual([]);
 
     const secondGoldBefore = blue.gold;
-    expect(drawEndTurnEvent(state, blue.id)?.cardId).toBe("royal-ransom");
+    const reshuffledRansom = drawEndTurnEvent(state, blue.id);
+    expect(reshuffledRansom?.cardId).toBe("royal-ransom");
+    expect(reshuffledRansom?.reshuffled).toBe(true);
     expect(blue.gold).toBe(secondGoldBefore + 8);
   });
 
@@ -1046,7 +1346,11 @@ describe("game rules", () => {
     state.eventDeck = ["sobering-thought"];
     const soberingThought = drawEndTurnEvent(state, blue.id);
     expect(soberingThought?.cardId).toBe("sobering-thought");
-    expect(soberingThought?.effects[0]).toMatchObject({ kind: "unit", unitId: redSoldier.id });
+    expect(soberingThought?.effects[0]).toMatchObject({
+      kind: "unit",
+      unitId: redSoldier.id,
+      previousUnit: { id: redSoldier.id, playerId: "red", drunk: true },
+    });
     expect(redSoldier.drunk).toBe(false);
 
     state.eventDeck = ["ale-delivery"];
@@ -1078,6 +1382,250 @@ describe("game rules", () => {
     expect(Math.max(Math.abs(blueSoldier.position.x - blue.castle.x), Math.abs(blueSoldier.position.y - blue.castle.y))).toBe(1);
   });
 
+  it("places a Called Home Viking in the nearest clear square when the castle courtyard is full", () => {
+    const state = createGame(setups, 211);
+    const blue = state.players.find((player) => player.id === "blue")!;
+    const traveller = state.units.find((unit) => unit.playerId === "blue" && unit.type === "soldier")!;
+    for (let y = 0; y < state.height; y += 1) {
+      for (let x = 0; x < state.width; x += 1) state.terrain[y * state.width + x] = "land";
+    }
+    blue.castle = { x: 8, y: 8 };
+    traveller.position = { x: 20, y: 18 };
+    const courtyard = [-1, 0, 1].flatMap((dx) =>
+      [-1, 0, 1]
+        .filter((dy) => dx !== 0 || dy !== 0)
+        .map((dy, index) => ({
+          id: `courtyard-blocker-${dx}-${dy}-${index}`,
+          playerId: "red" as const,
+          type: "soldier" as const,
+          position: { x: blue.castle.x + dx, y: blue.castle.y + dy },
+          moved: false,
+          fired: false,
+        })),
+    );
+    state.units = [traveller, ...courtyard];
+    state.treasures = [];
+    state.drinkingHorns = [];
+    state.eventDeck = ["called-home"];
+    const occupiedBefore = new Map(courtyard.map((unit) => [unit.id, { ...unit.position }]));
+
+    const event = drawEndTurnEvent(state, "blue");
+
+    expect(event?.cardId).toBe("called-home");
+    expect(Math.max(
+      Math.abs(traveller.position.x - blue.castle.x),
+      Math.abs(traveller.position.y - blue.castle.y),
+    )).toBe(2);
+    expect(courtyard.some((unit) =>
+      unit.position.x === traveller.position.x && unit.position.y === traveller.position.y,
+    )).toBe(false);
+    expect(state.units).toHaveLength(9);
+    for (const blocker of courtyard) expect(blocker.position).toEqual(occupiedBefore.get(blocker.id));
+    expect(event?.outcome).toContain("nearest clear square");
+  });
+
+  it("keeps Sturdy Longboat protection when its faction currently has no boat", () => {
+    const state = createGame(setups);
+    const blue = state.players.find((player) => player.id === "blue")!;
+    state.units = state.units.filter((unit) => unit.playerId !== "blue" || unit.type !== "longboat");
+    state.eventDeck = ["sturdy-longboat"];
+
+    const event = drawEndTurnEvent(state, "blue");
+
+    expect(event?.cardId).toBe("sturdy-longboat");
+    expect(blue.sturdyLongboatProtection).toBe(1);
+    expect(event?.outcome).toContain("next Longboat");
+  });
+
+  it("makes one available Viking from every faction drunk at the Yule Festival", () => {
+    const state = createGame(setups);
+    const blue = state.units.find((unit) => unit.playerId === "blue" && unit.type === "soldier")!;
+    const red = state.units.find((unit) => unit.playerId === "red" && unit.type === "soldier")!;
+    blue.veteran = true;
+    state.units = [blue, red];
+    state.treasures = [{ id: "yule-treasure", value: 20, position: { ...blue.position }, carriedBy: blue.id }];
+    state.eventDeck = ["yule-festival"];
+
+    const event = drawEndTurnEvent(state, "blue");
+
+    expect(event?.cardId).toBe("yule-festival");
+    expect(event?.effects).toHaveLength(2);
+    expect(event?.effects.map((effect) => effect.unitId)).toEqual(expect.arrayContaining([blue.id, red.id]));
+    expect(blue.drunk).toBe(true);
+    expect(red.drunk).toBe(true);
+    expect(state.treasures[0]?.carriedBy).toBeUndefined();
+    expect(state.treasures[0]?.position).not.toEqual(blue.position);
+    expect(unitAt(state, state.treasures[0]!.position)).toBeUndefined();
+  });
+
+  it("gives Berserker Rage a guaranteed next Viking clash without affecting castles", () => {
+    const state = createGame(setups);
+    const blue = state.units.find((unit) => unit.playerId === "blue" && unit.type === "soldier")!;
+    const red = state.units.find((unit) => unit.playerId === "red" && unit.type === "soldier")!;
+    blue.position = { x: 10, y: 10 };
+    red.position = { x: 11, y: 10 };
+    for (let x = 9; x <= 12; x += 1) state.terrain[10 * state.width + x] = "land";
+    state.units = [blue, red];
+    state.eventDeck = ["berserker-rage"];
+
+    const event = drawEndTurnEvent(state, "blue");
+    expect(event?.effects[0]).toMatchObject({ kind: "unit", unitId: blue.id, label: "BERSERKER RAGE!" });
+    expect(blue.rage).toBe(true);
+    expect(getCombatWinChance(blue, red)).toBe(1);
+    expect(getCastleCaptureChance(blue)).toBe(0.4);
+
+    expect(moveUnit(state, blue.id, red.position)).toBe(true);
+    expect(state.units).toContain(blue);
+    expect(state.units).not.toContain(red);
+    expect(blue.rage).toBe(false);
+    expect(state.log.some((entry) => entry.includes("Berserker Rage!"))).toBe(true);
+
+    const defendingState = createGame(setups);
+    const attacker = defendingState.units.find((unit) => unit.playerId === "blue" && unit.type === "soldier")!;
+    const ragingDefender = defendingState.units.find((unit) => unit.playerId === "red" && unit.type === "soldier")!;
+    attacker.position = { x: 10, y: 10 };
+    ragingDefender.position = { x: 11, y: 10 };
+    ragingDefender.rage = true;
+    for (let x = 9; x <= 12; x += 1) defendingState.terrain[10 * defendingState.width + x] = "land";
+    defendingState.units = [attacker, ragingDefender];
+    expect(moveUnit(defendingState, attacker.id, ragingDefender.position)).toBe(true);
+    expect(defendingState.units).not.toContain(attacker);
+    expect(defendingState.units).toContain(ragingDefender);
+    expect(ragingDefender.rage).toBe(false);
+  });
+
+  it("resolves the new loss, demotion, theft, and transfer saga cards visibly", () => {
+    const overboardState = createGame(setups);
+    const boat = overboardState.units.find((unit) => unit.playerId === "blue" && unit.type === "longboat")!;
+    const passengers = overboardState.units.filter((unit) => unit.playerId === "blue" && unit.type === "soldier");
+    for (const passenger of passengers) {
+      passenger.embarkedOn = boat.id;
+      passenger.position = { ...boat.position };
+    }
+    const passengerIdsBefore = new Set(passengers.map((passenger) => passenger.id));
+    overboardState.eventDeck = ["man-overboard"];
+    const overboard = drawEndTurnEvent(overboardState, "blue");
+    expect(overboard?.cardId).toBe("man-overboard");
+    expect(overboard?.effects).toHaveLength(1);
+    expect(overboard?.effects[0]).toMatchObject({ kind: "unit", label: "Man overboard!" });
+    const remainingPassengers = overboardState.units.filter((unit) => unit.embarkedOn === boat.id);
+    expect(remainingPassengers).toHaveLength(passengers.length - 1);
+    expect([...passengerIdsBefore].filter((id) => !overboardState.units.some((unit) => unit.id === id))).toHaveLength(1);
+
+    const demotionState = createGame(setups);
+    const veteran = demotionState.units.find((unit) => unit.playerId === "blue" && unit.type === "soldier")!;
+    veteran.veteran = true;
+    demotionState.eventDeck = ["bad-viking"];
+    const demotion = drawEndTurnEvent(demotionState, "blue");
+    expect(demotion?.cardId).toBe("bad-viking");
+    expect(demotion?.effects[0]).toMatchObject({ kind: "unit", unitId: veteran.id, label: "Demoted to Viking!" });
+    expect(veteran.veteran).toBe(false);
+
+    const banditState = createGame(setups);
+    banditState.treasures = [{ id: "bandit-target", value: 30, position: { x: 15, y: 12 } }];
+    banditState.eventDeck = ["bandits"];
+    const bandits = drawEndTurnEvent(banditState, "blue");
+    expect(bandits?.cardId).toBe("bandits");
+    expect(bandits?.effects[0]).toMatchObject({
+      kind: "treasure",
+      entityId: "bandit-target",
+      amount: -30,
+      removedTreasure: expect.objectContaining({ id: "bandit-target" }),
+    });
+    expect(banditState.treasures).toHaveLength(0);
+
+    const theftState = createGame(setups);
+    const blue = theftState.players.find((player) => player.id === "blue")!;
+    const red = theftState.players.find((player) => player.id === "red")!;
+    blue.gold = 21;
+    red.gold = 7;
+    theftState.eventDeck = ["inside-job"];
+    const insideJob = drawEndTurnEvent(theftState, "blue");
+    expect(insideJob?.cardId).toBe("inside-job");
+    expect(insideJob?.effects).toEqual([
+      expect.objectContaining({ kind: "gold", amount: -10, position: blue.castle }),
+      expect.objectContaining({ kind: "gold", amount: 10, position: red.castle }),
+    ]);
+    expect(blue.gold).toBe(11);
+    expect(red.gold).toBe(17);
+  });
+
+  it("shows a harmless resolution when a new saga card has no legal target", () => {
+    const state = createGame(setups);
+    state.units = state.units.filter((unit) => unit.type !== "soldier");
+    state.treasures = [];
+    state.players.find((player) => player.id === "blue")!.gold = 0;
+
+    for (const cardId of ["man-overboard", "bad-viking", "bandits", "inside-job"] as const) {
+      state.eventDeck = [cardId];
+      state.eventDiscard = [];
+      const event = drawEndTurnEvent(state, "blue");
+      expect(event?.cardId).toBe(cardId);
+      expect(event?.effects).toEqual([]);
+    }
+  });
+
+  it("resolves the five minor saga cards and records their board effects", () => {
+    const state = createGame(setups);
+    const blue = state.players.find((player) => player.id === "blue")!;
+
+    const looseGold = blue.gold;
+    state.eventDeck = ["loose-change"];
+    expect(drawEndTurnEvent(state, "blue")?.effects[0]).toMatchObject({ kind: "gold", amount: 3 });
+    expect(blue.gold).toBe(looseGold + 3);
+
+    const recruitCount = state.units.filter((unit) => unit.playerId === "blue" && unit.type === "soldier").length;
+    state.eventDeck = ["new-recruit"];
+    const recruitment = drawEndTurnEvent(state, "blue");
+    expect(recruitment?.effects[0]).toMatchObject({ kind: "unit", from: blue.castle, label: "New recruit!" });
+    expect(state.units.filter((unit) => unit.playerId === "blue" && unit.type === "soldier")).toHaveLength(recruitCount + 1);
+
+    const deserter = state.units.find((unit) =>
+      unit.playerId === "blue" && unit.type === "soldier" && !unit.veteran && !unit.embarkedOn && !carriedTreasure(state, unit.id),
+    )!;
+    state.units = state.units.filter((unit) => unit.id === deserter.id || unit.playerId !== "blue" || unit.type !== "soldier");
+    state.eventDeck = ["the-deserter"];
+    const desertion = drawEndTurnEvent(state, "blue");
+    expect(desertion?.effects[0]).toMatchObject({
+      kind: "unit",
+      unitId: deserter.id,
+      removedUnit: expect.objectContaining({ id: deserter.id }),
+    });
+    expect(state.units.some((unit) => unit.id === deserter.id)).toBe(false);
+
+    state.drinkingHorns = [{ id: "misdelivered-horn", position: { x: 15, y: 12 } }];
+    const hornStart = { ...state.drinkingHorns[0]!.position };
+    state.eventDeck = ["wrong-address"];
+    const wrongAddress = drawEndTurnEvent(state, "blue");
+    expect(wrongAddress?.effects[0]).toMatchObject({ kind: "horn", entityId: "misdelivered-horn", from: hornStart });
+    expect(state.drinkingHorns[0]!.position).not.toEqual(hornStart);
+
+    blue.gold = 2;
+    state.eventDeck = ["jarls-feast"];
+    expect(drawEndTurnEvent(state, "blue")?.effects[0]).toMatchObject({ kind: "gold", amount: -2 });
+    expect(blue.gold).toBe(0);
+  });
+
+  it("shows no-effect outcomes when the minor target-dependent cards cannot resolve", () => {
+    const state = createGame(setups);
+    const blue = state.players.find((player) => player.id === "blue")!;
+    state.units = state.units.filter((unit) => unit.playerId !== "blue" || unit.type !== "soldier");
+    state.drinkingHorns = [];
+    blue.gold = 0;
+    for (let dy = -1; dy <= 1; dy += 1) {
+      for (let dx = -1; dx <= 1; dx += 1) {
+        if (dx === 0 && dy === 0) continue;
+        state.terrain[(blue.castle.y + dy) * state.width + blue.castle.x + dx] = "water";
+      }
+    }
+
+    for (const cardId of ["the-deserter", "new-recruit", "wrong-address", "jarls-feast"] as const) {
+      state.eventDeck = [cardId];
+      state.eventDiscard = [];
+      expect(drawEndTurnEvent(state, "blue")?.effects).toEqual([]);
+    }
+  });
+
   it("deposits treasure when a Soldier returns beside, rather than onto, its castle", () => {
     const state = createGame(setups);
     const blue = state.players.find((player) => player.id === "blue")!;
@@ -1098,6 +1646,8 @@ describe("game rules", () => {
     expect(soldier.position).toEqual({ x: 4, y: 5 });
     expect(state.treasures).toHaveLength(0);
     expect(blue.gold).toBe(goldBefore + 30);
+    expect(state.battleStats.blue?.treasureChestsBanked).toBe(1);
+    expect(state.battleStats.blue?.goldBanked).toBe(30);
   });
 
   it("banks treasure from a Soldier already waiting beside its home castle", () => {
@@ -1165,7 +1715,7 @@ describe("game rules", () => {
     expect(blue.gold).toBe(0);
   });
 
-  it("resolves six benign saga cards without changing the game", () => {
+  it("resolves ten benign saga cards without changing the game or covering the board", () => {
     const state = createGame(setups);
     const blue = activePlayer(state);
     const benignCards = [
@@ -1175,6 +1725,10 @@ describe("game rules", () => {
       "longboat-laundry",
       "mead-inspector",
       "axe-shaped-cloud",
+      "tactical-goat",
+      "helmet-inspection",
+      "missing-spoon",
+      "rune-misread",
     ] as const;
     const goldBefore = blue.gold;
     const unitCountBefore = state.units.length;
@@ -1183,27 +1737,167 @@ describe("game rules", () => {
       state.eventDeck = [cardId];
       const event = drawEndTurnEvent(state, blue.id);
       expect(event?.cardId).toBe(cardId);
-      expect(event?.outcome).toContain("Nothing changes.");
-      expect(event?.effects).toEqual([expect.objectContaining({ kind: "benign", label: "Nothing changes" })]);
+      expect(event?.outcome.length).toBeGreaterThan(20);
+      expect(event?.outcome).not.toContain("Nothing happens");
+      expect(event?.effects).toEqual([]);
       expect(blue.gold).toBe(goldBefore);
       expect(state.units).toHaveLength(unitCountBefore);
     }
   });
 
+  it("blows a friendly Longboat and its crew one to three safe water squares off course", () => {
+    const state = createGame(setups);
+    const boat = state.units.find((unit) => unit.playerId === "blue" && unit.type === "longboat")!;
+    const passenger = state.units.find((unit) => unit.playerId === "blue" && unit.type === "soldier")!;
+    boat.position = { x: 15, y: 12 };
+    passenger.position = { ...boat.position };
+    passenger.embarkedOn = boat.id;
+    for (let y = 0; y < state.height; y += 1) {
+      for (let x = 0; x < state.width; x += 1) state.terrain[y * state.width + x] = "water";
+    }
+    state.units = [boat, passenger];
+    const from = { ...boat.position };
+    state.eventDeck = ["high-winds"];
+
+    const event = drawEndTurnEvent(state, "blue");
+
+    const distance = Math.max(Math.abs(boat.position.x - from.x), Math.abs(boat.position.y - from.y));
+    expect(event?.cardId).toBe("high-winds");
+    expect(event?.effects[0]).toMatchObject({
+      kind: "unit",
+      unitId: boat.id,
+      from,
+      position: boat.position,
+      label: "Blown off course!",
+    });
+    expect(distance).toBeGreaterThanOrEqual(1);
+    expect(distance).toBeLessThanOrEqual(3);
+    expect(passenger.position).toEqual(boat.position);
+    expect(unitFootprint(boat).every((cell) => terrainAt(state, cell) === "water")).toBe(true);
+  });
+
+  it("leaves the board alone when High Winds finds no safe friendly Longboat", () => {
+    const state = createGame(setups);
+    state.units = state.units.filter((unit) => unit.playerId !== "blue" || unit.type !== "longboat");
+    state.eventDeck = ["high-winds"];
+
+    const event = drawEndTurnEvent(state, "blue");
+
+    expect(event?.cardId).toBe("high-winds");
+    expect(event?.outcome).toContain("no Longboat");
+    expect(event?.effects).toEqual([]);
+  });
+
+  it("uses a favourable tide to move a Longboat and its crew safely toward an enemy castle", () => {
+    const state = createGame(setups);
+    const boat = state.units.find((unit) => unit.playerId === "blue" && unit.type === "longboat")!;
+    const passenger = state.units.find((unit) => unit.playerId === "blue" && unit.type === "soldier")!;
+    const red = state.players.find((player) => player.id === "red")!;
+    boat.position = { x: 10, y: 12 };
+    passenger.position = { ...boat.position };
+    passenger.embarkedOn = boat.id;
+    red.castle = { x: 25, y: 12 };
+    for (let y = 0; y < state.height; y += 1) {
+      for (let x = 0; x < state.width; x += 1) state.terrain[y * state.width + x] = "water";
+    }
+    state.units = [boat, passenger];
+    const from = { ...boat.position };
+    const before = Math.max(Math.abs(red.castle.x - from.x), Math.abs(red.castle.y - from.y));
+    state.eventDeck = ["favourable-tide"];
+
+    const event = drawEndTurnEvent(state, "blue");
+    const distance = Math.max(Math.abs(boat.position.x - from.x), Math.abs(boat.position.y - from.y));
+    const after = Math.max(Math.abs(red.castle.x - boat.position.x), Math.abs(red.castle.y - boat.position.y));
+
+    expect(event?.cardId).toBe("favourable-tide");
+    expect(event?.effects[0]).toMatchObject({ unitId: boat.id, from, position: boat.position });
+    expect(distance).toBeGreaterThanOrEqual(1);
+    expect(distance).toBeLessThanOrEqual(3);
+    expect(after).toBeLessThan(before);
+    expect(passenger.position).toEqual(boat.position);
+  });
+
+  it("charges only the available gold for Forgotten Rations", () => {
+    const state = createGame(setups);
+    const blue = activePlayer(state);
+    blue.gold = 1;
+    state.eventDeck = ["forgotten-rations"];
+
+    const event = drawEndTurnEvent(state, blue.id);
+
+    expect(event?.cardId).toBe("forgotten-rations");
+    expect(event?.effects[0]).toMatchObject({ kind: "gold", amount: -1 });
+    expect(blue.gold).toBe(0);
+  });
+
   it("captures an enemy castle from an adjacent square without occupying it", () => {
     const state = createGame(setups);
     const blueSoldier = state.units.find((unit) => unit.playerId === "blue" && unit.type === "soldier")!;
+    const redSurvivor = state.units.find((unit) => unit.playerId === "red" && unit.type === "soldier")!;
     const red = state.players.find((player) => player.id === "red")!;
     red.castle = { x: 11, y: 10 };
     blueSoldier.position = { x: 10, y: 10 };
-    state.units = [blueSoldier];
+    redSurvivor.position = { x: 20, y: 20 };
+    state.units = [blueSoldier, redSurvivor];
     state.seed = 0;
     for (let x = 10; x <= 11; x += 1) state.terrain[10 * state.width + x] = "land";
+
+    const context = captureMovementContext(state, blueSoldier.id, red.castle);
 
     expect(moveUnit(state, blueSoldier.id, red.castle)).toBe(true);
     expect(blueSoldier.position).toEqual({ x: 10, y: 10 });
     expect(blueSoldier.moved).toBe(true);
     expect(red.eliminated).toBe(true);
+    expect(redSurvivor.playerId).toBe("blue");
+    expect(state.battleStats.blue?.castleAttacks).toBe(1);
+    expect(state.battleStats.blue?.castlesCaptured).toBe(1);
+    const presentation = completeMovementPresentation(state, context!);
+    expect(presentation.castleAssault).toMatchObject({
+      castlePlayerId: "red",
+      attackerWon: true,
+      attackPosition: { x: 10, y: 10 },
+    });
+    expect(presentation.capturedUnits).toContainEqual(expect.objectContaining({
+      id: redSurvivor.id,
+      playerId: "red",
+    }));
+    expect(CASTLE_ASSAULT_DURATION_MS).toBe(3_000);
+  });
+
+  it("finishes a long castle charge on the adjacent attack square", () => {
+    const state = createGame(setups);
+    const attacker = state.units.find((unit) => unit.playerId === "blue" && unit.type === "soldier")!;
+    const red = state.players.find((player) => player.id === "red")!;
+    attacker.position = { x: 4, y: 10 };
+    red.castle = { x: 11, y: 10 };
+    state.units = [attacker];
+    state.seed = 0;
+    for (let x = 4; x <= 11; x += 1) state.terrain[10 * state.width + x] = "land";
+
+    const context = captureMovementContext(state, attacker.id, red.castle);
+    expect(context).toBeDefined();
+    expect(moveUnit(state, attacker.id, red.castle)).toBe(true);
+    expect(attacker.position).toEqual({ x: 10, y: 10 });
+    expect(completeMovementPresentation(state, context!).castleAssault?.attackPosition).toEqual({ x: 10, y: 10 });
+  });
+
+  it("drops a repelled castle attacker's treasure beside the walls", () => {
+    const state = createGame(setups);
+    const attacker = state.units.find((unit) => unit.playerId === "blue" && unit.type === "soldier")!;
+    const red = state.players.find((player) => player.id === "red")!;
+    attacker.position = { x: 4, y: 10 };
+    red.castle = { x: 11, y: 10 };
+    state.units = [attacker];
+    state.treasures = [{ id: "siege-chest", value: 20, position: { ...attacker.position }, carriedBy: attacker.id }];
+    state.seed = 1000;
+    for (let x = 4; x <= 11; x += 1) state.terrain[10 * state.width + x] = "land";
+
+    expect(moveUnit(state, attacker.id, red.castle)).toBe(true);
+    expect(state.units).not.toContain(attacker);
+    expect(state.treasures[0]).toMatchObject({
+      carriedBy: undefined,
+      position: { x: 10, y: 10 },
+    });
   });
 
   it("uses the requested Soldier, Veteran and castle combat chances", () => {
@@ -1234,6 +1928,9 @@ describe("game rules", () => {
     expect(moveUnit(state, blueSoldier.id, redSoldier.position)).toBe(true);
     expect(blueSoldier.veteran).toBe(true);
     expect(state.units).not.toContain(redSoldier);
+    expect(state.battleStats.blue?.combatVictories).toBe(1);
+    expect(state.battleStats.blue?.promotions).toBe(1);
+    expect(state.battleStats.red?.unitsLost).toBe(1);
 
     const defendingState = createGame(setups);
     const attackingSoldier = defendingState.units.find((unit) => unit.playerId === "blue" && unit.type === "soldier")!;
@@ -1249,6 +1946,51 @@ describe("game rules", () => {
     expect(defendingState.units).not.toContain(attackingSoldier);
   });
 
+  it("keeps and captures carried treasure after direct Viking combat", () => {
+    const attackingState = createGame(setups);
+    const blueAttacker = attackingState.units.find((unit) => unit.playerId === "blue" && unit.type === "soldier")!;
+    const redDefender = attackingState.units.find((unit) => unit.playerId === "red" && unit.type === "soldier")!;
+    blueAttacker.position = { x: 10, y: 10 };
+    redDefender.position = { x: 11, y: 10 };
+    blueAttacker.rage = true;
+    attackingState.units = [blueAttacker, redDefender];
+    attackingState.treasures = [
+      { id: "winner-chest", value: 20, position: { ...blueAttacker.position }, carriedBy: blueAttacker.id },
+      { id: "loser-chest", value: 30, position: { ...redDefender.position }, carriedBy: redDefender.id },
+    ];
+    for (let x = 10; x <= 11; x += 1) attackingState.terrain[10 * attackingState.width + x] = "land";
+
+    expect(moveUnit(attackingState, blueAttacker.id, redDefender.position)).toBe(true);
+    expect(attackingState.units).not.toContain(redDefender);
+    expect(carriedTreasure(attackingState, blueAttacker.id)).toMatchObject({
+      id: "winner-chest",
+      value: 50,
+      carriedBy: blueAttacker.id,
+    });
+    expect(attackingState.treasures).toHaveLength(1);
+
+    const defendingState = createGame(setups);
+    const losingAttacker = defendingState.units.find((unit) => unit.playerId === "blue" && unit.type === "soldier")!;
+    const winningDefender = defendingState.units.find((unit) => unit.playerId === "red" && unit.type === "soldier")!;
+    losingAttacker.position = { x: 10, y: 10 };
+    winningDefender.position = { x: 11, y: 10 };
+    winningDefender.rage = true;
+    defendingState.units = [losingAttacker, winningDefender];
+    defendingState.treasures = [
+      { id: "captured-chest", value: 40, position: { ...losingAttacker.position }, carriedBy: losingAttacker.id },
+    ];
+    for (let x = 10; x <= 11; x += 1) defendingState.terrain[10 * defendingState.width + x] = "land";
+
+    expect(moveUnit(defendingState, losingAttacker.id, winningDefender.position)).toBe(true);
+    expect(defendingState.units).not.toContain(losingAttacker);
+    expect(carriedTreasure(defendingState, winningDefender.id)).toMatchObject({
+      id: "captured-chest",
+      value: 40,
+      carriedBy: winningDefender.id,
+    });
+    expect(defendingState.log).toContain("Red claims 40 gold from the defeated Viking!");
+  });
+
   it("removes a Soldier when the castle wins its defence roll", () => {
     const state = createGame(setups);
     const blueSoldier = state.units.find((unit) => unit.playerId === "blue" && unit.type === "soldier")!;
@@ -1259,9 +2001,17 @@ describe("game rules", () => {
     state.seed = 1000; // The next seeded roll is above both castle-capture chances.
     for (let x = 10; x <= 11; x += 1) state.terrain[10 * state.width + x] = "land";
 
+    const context = captureMovementContext(state, blueSoldier.id, red.castle);
+
     expect(moveUnit(state, blueSoldier.id, red.castle)).toBe(true);
     expect(state.units).not.toContain(blueSoldier);
     expect(red.eliminated).toBe(false);
+    expect(state.battleStats.blue?.castleAttacks).toBe(1);
+    expect(state.battleStats.blue?.unitsLost).toBe(1);
+    expect(completeMovementPresentation(state, context!).castleAssault).toMatchObject({
+      castlePlayerId: "red",
+      attackerWon: false,
+    });
   });
 
   it("supports five computer difficulties with identical purchase opportunities", () => {
@@ -1847,11 +2597,138 @@ describe("game rules", () => {
     expect(chooseAiMove(state, "hard")).toBeUndefined();
   });
 
+  it("assigns and boards raiders when a Longboat provides a useful route", () => {
+    const state = createGame([
+      { id: "blue", controller: "hard" },
+      { id: "red", controller: "human" },
+    ], 96);
+    const blue = state.players.find((player) => player.id === "blue")!;
+    const red = state.players.find((player) => player.id === "red")!;
+    const boat = state.units.find((unit) => unit.playerId === "blue" && unit.type === "longboat")!;
+    const soldier = state.units.find((unit) => unit.playerId === "blue" && unit.type === "soldier")!;
+    state.terrain.fill("water");
+    blue.castle = { x: 3, y: 8 };
+    red.castle = { x: 27, y: 8 };
+    for (let y = 7; y <= 9; y += 1) {
+      for (let x = 2; x <= 6; x += 1) state.terrain[y * state.width + x] = "land";
+      for (let x = 25; x <= 29; x += 1) state.terrain[y * state.width + x] = "land";
+    }
+    boat.position = { x: 5, y: 10 };
+    soldier.position = { x: 5, y: 9 };
+    state.units = [boat, soldier];
+    state.treasures = [];
+    state.drinkingHorns = [];
+
+    const action = chooseAiMove(state, "hard");
+    expect(action?.unitId).toBe(soldier.id);
+    expect(action?.destination.y).toBe(10);
+    expect(unitAt(state, action!.destination)?.id).toBe(boat.id);
+    expect(state.aiPlans.blue?.transportMissions?.[boat.id]?.crewIds).toContain(soldier.id);
+    expect(moveUnit(state, action!.unitId, action!.destination)).toBe(true);
+    expect(longboatPassengers(state, boat.id)).toHaveLength(1);
+    const sailing = chooseAiMove(state, "hard");
+    expect(sailing?.unitId).toBe(boat.id);
+    expect(sailing!.destination.x).toBeGreaterThan(boat.position.x);
+  });
+
+  it("lets an Expert ferry depart with two crew after waiting one full round", () => {
+    const state = createGame([
+      { id: "blue", controller: "expert" },
+      { id: "red", controller: "human" },
+    ], 961);
+    const blue = state.players.find((player) => player.id === "blue")!;
+    const red = state.players.find((player) => player.id === "red")!;
+    const boat = state.units.find((unit) => unit.playerId === "blue" && unit.type === "longboat")!;
+    const soldiers = state.units.filter((unit) => unit.playerId === "blue" && unit.type === "soldier");
+    state.terrain.fill("water");
+    blue.castle = { x: 3, y: 8 };
+    red.castle = { x: 27, y: 8 };
+    for (let y = 7; y <= 9; y += 1) {
+      for (let x = 2; x <= 6; x += 1) state.terrain[y * state.width + x] = "land";
+      for (let x = 25; x <= 29; x += 1) state.terrain[y * state.width + x] = "land";
+    }
+    boat.position = { x: 5, y: 10 };
+    soldiers[0]!.position = { ...boat.position };
+    soldiers[0]!.embarkedOn = boat.id;
+    soldiers[1]!.position = { ...boat.position };
+    soldiers[1]!.embarkedOn = boat.id;
+    soldiers[2]!.position = { x: 5, y: 9 };
+    state.units = [boat, ...soldiers];
+    state.treasures = [];
+    state.drinkingHorns = [];
+    state.round = 2;
+    state.aiPlans.blue = {
+      playerId: "blue",
+      objective: "attack-castle",
+      targetPlayerId: "red",
+      createdRound: 1,
+      retainUntilRound: 10,
+      roles: Object.fromEntries(soldiers.map((soldier) => [soldier.id, "raider"])),
+      transportMissions: {
+        [boat.id]: {
+          boatId: boat.id,
+          targetPlayerId: "red",
+          crewIds: soldiers.map((soldier) => soldier.id),
+          createdRound: 1,
+          pickupPosition: { ...boat.position },
+          departed: false,
+        },
+      },
+    };
+
+    const action = chooseAiMove(state, "expert");
+    expect(state.aiPlans.blue.transportMissions?.[boat.id]?.crewIds).toEqual([soldiers[0]!.id, soldiers[1]!.id]);
+    expect(action?.unitId).toBe(boat.id);
+    expect(action!.destination.x).toBeGreaterThan(boat.position.x);
+  });
+
+  it("ends a computer transport mission after its passengers land", async () => {
+    const state = createGame([
+      { id: "blue", controller: "hard" },
+      { id: "red", controller: "human" },
+    ], 962, { eventDeckEnabled: false, winterEnabled: false });
+    const boat = state.units.find((unit) => unit.playerId === "blue" && unit.type === "longboat")!;
+    const passenger = state.units.find((unit) => unit.playerId === "blue" && unit.type === "soldier")!;
+    const red = state.players.find((player) => player.id === "red")!;
+    state.terrain.fill("water");
+    boat.position = { x: 10, y: 10 };
+    passenger.position = { ...boat.position };
+    passenger.embarkedOn = boat.id;
+    red.castle = { x: 10, y: 5 };
+    for (let x = 8; x <= 12; x += 1) state.terrain[9 * state.width + x] = "land";
+    state.units = [boat, passenger];
+    state.treasures = [];
+    state.drinkingHorns = [];
+    state.aiPlans.blue = {
+      playerId: "blue",
+      objective: "attack-castle",
+      targetPlayerId: "red",
+      createdRound: 1,
+      retainUntilRound: 10,
+      roles: { [boat.id]: "transport", [passenger.id]: "raider" },
+      transportMissions: {
+        [boat.id]: {
+          boatId: boat.id,
+          targetPlayerId: "red",
+          crewIds: [passenger.id],
+          createdRound: 1,
+          pickupPosition: { x: 5, y: 10 },
+          departed: true,
+        },
+      },
+    };
+
+    const summary = await executeComputerTurn(state);
+    expect(summary.landings).toBe(1);
+    expect(passenger.embarkedOn).toBeUndefined();
+    expect(state.aiPlans.blue?.transportMissions?.[boat.id]).toBeUndefined();
+  });
+
   it("makes a computer Longboat prioritise a reachable ram", () => {
     const state = createGame([
       { id: "blue", controller: "hard" },
       { id: "red", controller: "human" },
-    ], 97);
+    ], 97, { eventCardFrequency: "off" });
     const blueBoat = state.units.find((unit) => unit.playerId === "blue" && unit.type === "longboat")!;
     const redBoat = state.units.find((unit) => unit.playerId === "red" && unit.type === "longboat")!;
     blueBoat.position = { x: 10, y: 10 };
@@ -1860,7 +2737,8 @@ describe("game rules", () => {
     state.units = [blueBoat, redBoat];
 
     const action = chooseAiMove(state, "hard");
-    expect(action).toEqual({ unitId: blueBoat.id, destination: { x: 12, y: 10 } });
+    expect(action?.unitId).toBe(blueBoat.id);
+    expect(action?.destination.y).toBe(10);
     expect(moveUnit(state, action!.unitId, action!.destination)).toBe(true);
     expect(state.units).not.toContain(redBoat);
   });

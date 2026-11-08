@@ -1,6 +1,7 @@
 export type Terrain = "land" | "water" | "ice";
 export type TurnPhase = "movement" | "purchase";
 export type UnitType = "soldier" | "longboat" | "catapult";
+export type EventCardFrequency = "off" | "every-turn" | "every-two-turns";
 export type EventCardId =
   | "royal-ransom"
   | "treasure-hunter"
@@ -18,7 +19,49 @@ export type EventCardId =
   | "ordinary-rock"
   | "longboat-laundry"
   | "mead-inspector"
-  | "axe-shaped-cloud";
+  | "axe-shaped-cloud"
+  | "man-overboard"
+  | "bad-viking"
+  | "bandits"
+  | "inside-job"
+  | "loose-change"
+  | "the-deserter"
+  | "new-recruit"
+  | "wrong-address"
+  | "jarls-feast"
+  | "sturdy-longboat"
+  | "yule-festival"
+  | "berserker-rage"
+  | "tactical-goat"
+  | "helmet-inspection"
+  | "high-winds"
+  | "shield-wall"
+  | "favourable-tide"
+  | "forgotten-rations"
+  | "missing-spoon"
+  | "rune-misread"
+  | "missing-boot"
+  | "raven-union"
+  | "porridge-emergency"
+  | "axe-seminar"
+  | "jarls-new-hat"
+  | "legendary-nap"
+  | "suspicious-seagull"
+  | "beard-braiding"
+  | "herring-debate"
+  | "helgas-cabbage"
+  | "longhouse-draft"
+  | "runic-typo"
+  | "viking-yoga"
+  | "wrong-saga"
+  | "spare-helmet"
+  | "fjord-fashion"
+  | "taxidermy-workshop"
+  | "unhelpful-map"
+  | "thors-lost-sock"
+  | "quiet-battle-cry"
+  | "axe-polishing"
+  | "ferocious-duck";
 export type Difficulty = "very-easy" | "easy" | "normal" | "hard" | "expert";
 export type Controller = "human" | Difficulty;
 export type PlayerId = "blue" | "red" | "pink" | "green";
@@ -49,7 +92,9 @@ export interface PlayerSetup {
 }
 
 export interface GameOptions {
-  /** Whether the shared saga deck is used at the end of turns. */
+  /** Shared Saga Card cadence. Takes precedence over the legacy on/off option. */
+  eventCardFrequency?: EventCardFrequency;
+  /** Legacy benchmark/test compatibility: true means every turn, false means off. */
   eventDeckEnabled?: boolean;
   /** Rotate the fixed turn sequence so a seeded random participating faction begins. */
   randomStartingPlayer?: boolean;
@@ -68,6 +113,8 @@ export interface Player {
   emblem: string;
   controller: Controller;
   gold: number;
+  /** Saga protection charges; each one saves the next friendly Longboat hit or rammed. */
+  sturdyLongboatProtection: number;
   castle: Position;
   eliminated: boolean;
 }
@@ -89,6 +136,10 @@ export interface Unit {
   drunk?: boolean;
   /** Promotion earned by defeating another Soldier or Veteran in direct combat. */
   veteran?: boolean;
+  /** Wins this unit's next direct Soldier/Veteran clash; castles do not consume or receive the bonus. */
+  rage?: boolean;
+  /** Absorbs the next Catapult impact on this Soldier or Veteran, then expires. */
+  shieldWall?: boolean;
 }
 
 export interface TreasureChest {
@@ -105,7 +156,7 @@ export interface DrinkingHorn {
 
 /** Serializable board cue used to replay a Saga Card's visible consequence. */
 export interface EventEffect {
-  kind: "unit" | "gold" | "treasure" | "horn" | "benign";
+  kind: "unit" | "gold" | "treasure" | "horn" | "protection" | "benign";
   position: Position;
   label: string;
   unitId?: string;
@@ -113,6 +164,12 @@ export interface EventEffect {
   from?: Position;
   amount?: number;
   previousPlayerId?: PlayerId;
+  /** Complete pre-effect appearance retained until a Saga animation reveals the resolved state. */
+  previousUnit?: Unit;
+  /** Snapshot retained when the effect removes a unit before presentation begins. */
+  removedUnit?: Unit;
+  /** Snapshot retained when the effect removes a chest before presentation begins. */
+  removedTreasure?: TreasureChest;
 }
 
 export interface EventDraw {
@@ -120,6 +177,8 @@ export interface EventDraw {
   cardId: EventCardId;
   playerId: PlayerId;
   outcome: string;
+  /** True when the discard pile was returned to the draw pile immediately before this draw. */
+  reshuffled?: boolean;
   /** Exact pieces and squares changed, retained for rendering, saves and replays. */
   effects: EventEffect[];
 }
@@ -132,6 +191,40 @@ export interface AiPlan {
   createdRound: number;
   retainUntilRound: number;
   roles: Record<string, AiUnitRole>;
+  /** Purposeful ferry assignments retained across turns and saves. */
+  transportMissions?: Record<string, AiTransportMission>;
+  /** Recently completed ferries cannot immediately order their landing party back aboard. */
+  transportCooldowns?: Record<string, number>;
+}
+
+export interface AiTransportMission {
+  boatId: string;
+  targetPlayerId: PlayerId;
+  crewIds: string[];
+  createdRound: number;
+  /** Original loading point, used to distinguish waiting from a launched ferry. */
+  pickupPosition?: Position;
+  departed?: boolean;
+}
+
+/** Small, serializable counters used by the end-of-match battle report. */
+export interface PlayerBattleStats {
+  unitsPurchased: Record<UnitType, number>;
+  treasureChestsBanked: number;
+  goldBanked: number;
+  combatVictories: number;
+  unitsLost: number;
+  longboatsLost: number;
+  longboatsSunk: number;
+  catapultShots: number;
+  catapultHits: number;
+  friendlyFireHits: number;
+  castleAttacks: number;
+  castlesCaptured: number;
+  promotions: number;
+  drunkenIncidents: number;
+  sagaCardsDrawn: number;
+  sturdyLongboatSaves: number;
 }
 
 export interface GameState {
@@ -142,6 +235,8 @@ export interface GameState {
   units: Unit[];
   treasures: TreasureChest[];
   drinkingHorns: DrinkingHorn[];
+  eventCardFrequency: EventCardFrequency;
+  /** Compatibility flag derived from eventCardFrequency. */
   eventDeckEnabled: boolean;
   randomStartingPlayer: boolean;
   randomPlayerOrder: boolean;
@@ -154,6 +249,10 @@ export interface GameState {
   eventDeck: EventCardId[];
   eventDiscard: EventCardId[];
   eventSequence: number;
+  /** Total number of completed faction turns, retained for match diagnostics. */
+  completedTurns: number;
+  /** Per-faction history for the humorous end-of-match battle report. */
+  battleStats: Partial<Record<PlayerId, PlayerBattleStats>>;
   lastEvent?: EventDraw;
   aiPlans: Partial<Record<PlayerId, AiPlan>>;
   activePlayerIndex: number;

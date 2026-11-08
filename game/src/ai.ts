@@ -25,6 +25,7 @@ import {
 import type {
   AiObjective,
   AiPlan,
+  AiTransportMission,
   AiUnitRole,
   Difficulty,
   GameState,
@@ -63,6 +64,8 @@ interface AiProfile {
   assaultGroupSize: number;
   veteranCaution: number;
   homeCongestionPenalty: number;
+  transportSavings: number;
+  transportCrew: number;
 }
 
 interface AiContext {
@@ -73,6 +76,7 @@ interface AiContext {
   deliveryUrgency: "none" | "distant" | "prepare" | "imminent";
   deliveryBlocked: boolean;
   longboatGoals: Map<string, Position[]>;
+  boardingAssignments: Map<string, string>;
   plan: AiPlan;
   targetCastle?: Player;
   castleThreats: Unit[];
@@ -89,13 +93,15 @@ function profileFor(difficulty: Difficulty): AiProfile {
     castleAttackChance: 1, candidatePool: 1, strategicWeight: 28,
     combatJudgement: 1.3, coordinationWeight: 28, assaultGroupSize: 2, veteranCaution: 60,
     homeCongestionPenalty: 32,
+    transportSavings: 2, transportCrew: 3,
   };
   if (difficulty === "hard") return {
     pathWeight: 28, crowdPenalty: 18, courtyardPenalty: 90, clearCourtyardBonus: 300, edgePenalty: 36,
     minimumMoveScore: 0, holdImprovement: 2, planRetention: 2, defenceHorizon: 10, defenderCount: 2,
-    castleAttackChance: 1, candidatePool: 1, strategicWeight: 21,
+    castleAttackChance: 1, candidatePool: 2, strategicWeight: 21,
     combatJudgement: 1, coordinationWeight: 22, assaultGroupSize: 2, veteranCaution: 45,
     homeCongestionPenalty: 18,
+    transportSavings: 3, transportCrew: 2,
   };
   if (difficulty === "normal") return {
     pathWeight: 16, crowdPenalty: 11, courtyardPenalty: 56, clearCourtyardBonus: 190, edgePenalty: 20,
@@ -103,6 +109,7 @@ function profileFor(difficulty: Difficulty): AiProfile {
     castleAttackChance: 0.9, candidatePool: 2, strategicWeight: 13,
     combatJudgement: 0.55, coordinationWeight: 9, assaultGroupSize: 2, veteranCaution: 28,
     homeCongestionPenalty: 8,
+    transportSavings: 5, transportCrew: 2,
   };
   if (difficulty === "easy") return {
     pathWeight: 7, crowdPenalty: 7, courtyardPenalty: 36, clearCourtyardBonus: 110, edgePenalty: 12,
@@ -110,6 +117,7 @@ function profileFor(difficulty: Difficulty): AiProfile {
     castleAttackChance: 0.8, candidatePool: 8, strategicWeight: 8,
     combatJudgement: 0.22, coordinationWeight: 3, assaultGroupSize: 1, veteranCaution: 8,
     homeCongestionPenalty: 2,
+    transportSavings: 8, transportCrew: 1,
   };
   return {
     pathWeight: 2, crowdPenalty: 3, courtyardPenalty: 18, clearCourtyardBonus: 55, edgePenalty: 4,
@@ -117,6 +125,7 @@ function profileFor(difficulty: Difficulty): AiProfile {
     castleAttackChance: 0.65, candidatePool: 14, strategicWeight: 4,
     combatJudgement: 0, coordinationWeight: 0, assaultGroupSize: 1, veteranCaution: 0,
     homeCongestionPenalty: 0,
+    transportSavings: 10, transportCrew: 1,
   };
 }
 
@@ -389,7 +398,20 @@ function ensureAiPlan(state: GameState, player: Player, difficulty: Difficulty, 
     createdRound: canRetain ? existing!.createdRound : state.round,
     retainUntilRound: canRetain ? existing!.retainUntilRound : state.round + profile.planRetention,
     roles: assignAiRoles(state, player, objective, profile, retainedRoles),
+    transportCooldowns: Object.fromEntries(
+      Object.entries(existing?.transportCooldowns ?? {}).filter(([, untilRound]) => untilRound >= state.round),
+    ),
   };
+  plan.transportMissions = buildTransportMissions(
+    state,
+    player,
+    target,
+    difficulty,
+    profile,
+    existing?.transportMissions,
+    plan.transportCooldowns,
+    plan.roles,
+  );
   state.aiPlans[player.id] = plan;
   return plan;
 }
@@ -422,7 +444,154 @@ function navigableBoatCentres(state: GameState, boat: Unit): Position[] {
   return centres;
 }
 
-function buildLongboatGoals(state: GameState, player: Player): Map<string, Position[]> {
+function transportLandingCentres(state: GameState, boat: Unit, target: Player): Position[] {
+  return navigableBoatCentres(state, boat).filter((centre) =>
+    shoreCellsBesideBoat(state, centre).some((cell) => distance(cell, target.castle) <= 8),
+  );
+}
+
+function buildTransportMissions(
+  state: GameState,
+  player: Player,
+  target: Player | undefined,
+  difficulty: Difficulty,
+  profile: AiProfile,
+  existing: Record<string, AiTransportMission> | undefined,
+  cooldowns: Record<string, number> | undefined,
+  roles: Record<string, AiUnitRole>,
+): Record<string, AiTransportMission> {
+  if (!target) return {};
+  const boats = state.units.filter((unit) =>
+    unit.playerId === player.id && unit.type === "longboat" && !longboatIsFrozen(state, unit),
+  );
+  const eligibleSoldiers = state.units.filter((unit) =>
+    unit.playerId === player.id &&
+    unit.type === "soldier" &&
+    !unit.drunk &&
+    !carriedTreasure(state, unit.id) &&
+    roles[unit.id] !== "castle-defender" &&
+    roles[unit.id] !== "treasure-hunter",
+  );
+  const existingHasDeparted = boats.some((boat) => {
+    const mission = existing?.[boat.id];
+    const pickup = mission?.pickupPosition;
+    return Boolean(mission && (mission.departed || pickup && distance(boat.position, pickup) > 0));
+  });
+  // Expert may prepare a second ferry only after the first one has genuinely
+  // launched. This prevents two simultaneous loading queues from consuming
+  // most of its raiding force beside home.
+  const maxMissions = difficulty === "expert" && eligibleSoldiers.length >= 6 && existingHasDeparted ? 2 : 1;
+  const missions: Record<string, AiTransportMission> = {};
+  const assignedCrew = new Set<string>();
+
+  const evaluateBoat = (boat: Unit) => {
+    const landingCentres = transportLandingCentres(state, boat, target);
+    const sailingDistance = routeDistance(state, boat, boat.position, landingCentres);
+    if (sailingDistance === undefined || landingCentres.length === 0) return undefined;
+    const landingDistance = Math.min(...landingCentres.flatMap((centre) =>
+      shoreCellsBesideBoat(state, centre).map((cell) => distance(cell, target.castle)),
+    ));
+    const pickupCells = shoreCellsBesideBoat(state, boat.position).filter((cell) => terrainAt(state, cell) !== "water");
+    const targetCells = adjacentCastleCells(state, target);
+    const evaluateSoldier = (soldier: Unit) => {
+      const pickupDistance = soldier.embarkedOn === boat.id
+        ? 0
+        : routeDistance(state, soldier, soldier.position, pickupCells);
+      const landDistance = routeDistance(state, soldier, soldier.position, targetCells);
+      const seaDistance = pickupDistance === undefined
+        ? Number.MAX_SAFE_INTEGER
+        : pickupDistance + 1 + sailingDistance + landingDistance;
+      const longFlank = landDistance !== undefined && landDistance >= 18 && seaDistance <= landDistance + 2;
+      const useful = landDistance === undefined || landDistance - seaDistance >= profile.transportSavings ||
+        ((difficulty === "normal" || difficulty === "hard" || difficulty === "expert") && longFlank);
+      return { soldier, useful, saving: landDistance === undefined ? 100 : landDistance - seaDistance };
+    };
+    return { evaluateSoldier, pickupCells };
+  };
+
+  for (const boat of boats) {
+    if ((cooldowns?.[boat.id] ?? -1) >= state.round) continue;
+    const retained = existing?.[boat.id];
+    if (!retained || retained.targetPlayerId !== target.id || Object.keys(missions).length >= maxMissions) continue;
+    const evaluation = evaluateBoat(boat);
+    if (!evaluation) continue; // Winter or changed terrain has invalidated the voyage.
+    const pickupPosition = retained.pickupPosition ?? { ...boat.position };
+    const departed = Boolean(retained.departed || distance(boat.position, pickupPosition) > 0);
+    let crewIds = retained.crewIds.filter((crewId) => {
+      const crew = state.units.find((unit) => unit.id === crewId);
+      if (!crew || crew.playerId !== player.id || crew.type !== "soldier" || crew.drunk || carriedTreasure(state, crew.id)) return false;
+      if (roles[crew.id] === "castle-defender" || roles[crew.id] === "treasure-hunter") return false;
+      return departed || crew.embarkedOn === boat.id || evaluation.evaluateSoldier(crew).useful;
+    });
+    if (crewIds.length === 0) continue;
+    const boardedIds = crewIds.filter((crewId) =>
+      state.units.some((unit) => unit.id === crewId && unit.embarkedOn === boat.id),
+    );
+    // A three-person Expert crew gets one full round to assemble. If two are
+    // already aboard after that, launch rather than wasting another turn.
+    if (!departed && state.round > retained.createdRound && boardedIds.length >= 2 && crewIds.length > 2) {
+      crewIds = boardedIds;
+    }
+    missions[boat.id] = { ...retained, pickupPosition, departed, crewIds };
+    crewIds.forEach((crewId) => assignedCrew.add(crewId));
+  }
+
+  // Replace dead, drunk, treasure-carrying, or reassigned crew immediately
+  // while the ferry is still loading. Departed boats never turn back for a
+  // replacement.
+  for (const [boatId, mission] of Object.entries(missions)) {
+    if (mission.departed) continue;
+    const boat = boats.find((candidate) => candidate.id === boatId);
+    const evaluation = boat && evaluateBoat(boat);
+    if (!boat || !evaluation) continue;
+    const boardedCount = mission.crewIds.filter((crewId) =>
+      state.units.some((unit) => unit.id === crewId && unit.embarkedOn === boat.id),
+    ).length;
+    const desiredCrew = state.round > mission.createdRound && boardedCount >= 2
+      ? Math.min(2, profile.transportCrew)
+      : profile.transportCrew;
+    const replacements = eligibleSoldiers
+      .filter((soldier) => !assignedCrew.has(soldier.id) && !soldier.embarkedOn)
+      .map(evaluation.evaluateSoldier)
+      .filter((candidate) => candidate.useful)
+      .sort((a, b) => b.saving - a.saving || distance(a.soldier.position, boat.position) - distance(b.soldier.position, boat.position));
+    for (const replacement of replacements) {
+      if (mission.crewIds.length >= desiredCrew) break;
+      mission.crewIds.push(replacement.soldier.id);
+      assignedCrew.add(replacement.soldier.id);
+    }
+  }
+
+  for (const boat of boats) {
+    if ((cooldowns?.[boat.id] ?? -1) >= state.round) continue;
+    if (missions[boat.id] || Object.keys(missions).length >= maxMissions) continue;
+    const evaluation = evaluateBoat(boat);
+    if (!evaluation) continue;
+    const candidates = eligibleSoldiers
+      .filter((soldier) => !assignedCrew.has(soldier.id) && (!soldier.embarkedOn || soldier.embarkedOn === boat.id))
+      .map(evaluation.evaluateSoldier)
+      .filter((candidate) => candidate.useful)
+      .sort((a, b) => b.saving - a.saving || distance(a.soldier.position, boat.position) - distance(b.soldier.position, boat.position));
+    if (candidates.length === 0) continue;
+    const crewIds = candidates.slice(0, profile.transportCrew).map((candidate) => candidate.soldier.id);
+    missions[boat.id] = {
+      boatId: boat.id,
+      targetPlayerId: target.id,
+      crewIds,
+      createdRound: state.round,
+      pickupPosition: { ...boat.position },
+      departed: false,
+    };
+    crewIds.forEach((crewId) => assignedCrew.add(crewId));
+  }
+  return missions;
+}
+
+function buildLongboatGoals(
+  state: GameState,
+  player: Player,
+  missions: Record<string, AiTransportMission>,
+): Map<string, Position[]> {
   const goals = new Map<string, Position[]>();
   const boats = state.units.filter((unit) => unit.playerId === player.id && unit.type === "longboat");
   const enemyBoats = state.units.filter((unit) => unit.playerId !== player.id && unit.type === "longboat");
@@ -431,30 +600,29 @@ function buildLongboatGoals(state: GameState, player: Player): Map<string, Posit
   for (const boat of boats) {
     let candidates: Position[] = [];
     const crew = longboatPassengers(state, boat.id).length;
-    if (enemyBoats.length > 0) {
-      candidates.push(...enemyBoats.map((enemy) => enemy.position));
-    }
-    if (crew > 0) {
+    const mission = missions[boat.id];
+    const missionTarget = mission
+      ? enemyCastles.find((candidate) => candidate.id === mission.targetPlayerId)
+      : undefined;
+    const waitingCrew = mission?.crewIds.filter((crewId) =>
+      state.units.some((unit) => unit.id === crewId && unit.embarkedOn !== boat.id),
+    ) ?? [];
+    if (mission && waitingCrew.length > 0) {
+      // The ferry stays at its pickup point while its assigned raiders board.
+      candidates.push({ ...boat.position });
+    } else if (mission && missionTarget) {
+      candidates.push(...transportLandingCentres(state, boat, missionTarget));
+    } else if (crew > 0) {
       candidates.push(...navigableBoatCentres(state, boat).filter((centre) => {
         const shore = shoreCellsBesideBoat(state, centre);
         return shore.some((cell) => enemyCastles.some((enemy) => distance(cell, enemy.castle) <= 8));
       }));
     } else {
-      const waitingSoldiers = state.units.filter((unit) =>
-        unit.playerId === player.id &&
-        unit.type === "soldier" &&
-        !unit.embarkedOn &&
-        !unit.drunk &&
-        !carriedTreasure(state, unit.id) &&
-        distance(unit.position, boat.position) <= 10,
-      );
-      if (waitingSoldiers.length > 0) {
-        candidates.push(...navigableBoatCentres(state, boat).filter((centre) =>
-          shoreCellsBesideBoat(state, centre).some((cell) =>
-            waitingSoldiers.some((soldier) => distance(cell, soldier.position) <= 2),
-          ),
-        ));
-      }
+      // Empty boats only intercept an immediate naval threat; they no longer
+      // wander across the fjord merely because another faction owns a boat.
+      candidates.push(...enemyBoats
+        .filter((enemy) => distance(enemy.position, boat.position) <= 9)
+        .map((enemy) => enemy.position));
     }
 
     const unique = [...new Map(candidates.map((position) => [`${position.x},${position.y}`, position])).values()]
@@ -469,6 +637,11 @@ function buildLongboatGoals(state: GameState, player: Player): Map<string, Posit
 function buildContext(state: GameState, player: Player, difficulty: Difficulty): AiContext {
   const profile = profileFor(difficulty);
   const plan = ensureAiPlan(state, player, difficulty, profile);
+  const transportMissions = plan.transportMissions ?? {};
+  const boardingAssignments = new Map<string, string>();
+  for (const mission of Object.values(transportMissions)) {
+    for (const crewId of mission.crewIds) boardingAssignments.set(crewId, mission.boatId);
+  }
   const deliveryCells = openDeliveryCells(state, player);
   const treasureHunterId = Object.entries(plan.roles).find(([, role]) => role === "treasure-hunter")?.[0];
   const homeCells = adjacentCastleCells(state, player);
@@ -523,7 +696,8 @@ function buildContext(state: GameState, player: Player, difficulty: Difficulty):
     deliveryBlocked:
       (deliveryUrgency === "prepare" || deliveryUrgency === "imminent") &&
       deliveryCells.length === 0,
-    longboatGoals: buildLongboatGoals(state, player),
+    longboatGoals: buildLongboatGoals(state, player, transportMissions),
+    boardingAssignments,
     plan,
     targetCastle,
     castleThreats,
@@ -564,6 +738,18 @@ function scoreMove(
     const carriedChest = carriedTreasure(state, unit.id);
     const nearestChest = nearestChestFor(state, unit, profile);
     const horn = drinkingHornAt(state, destination);
+    const assignedBoatId = context.boardingAssignments.get(unit.id);
+    const assignedBoat = assignedBoatId
+      ? state.units.find((candidate) => candidate.id === assignedBoatId && candidate.type === "longboat")
+      : undefined;
+    if (assignedBoat && !unit.embarkedOn) {
+      const pickupCells = shoreCellsBesideBoat(state, assignedBoat.position).filter(
+        (cell) => terrainAt(state, cell) !== "water",
+      );
+      score += 140 + routeProgress(state, unit, destination, pickupCells, profile) * 6;
+      if (targetUnit?.id === assignedBoat.id) score += 1800;
+      if (distance(destination, assignedBoat.position) <= 2) score += 90;
+    }
     if (carriedChest) {
       score += routeProgress(state, unit, destination, context.deliveryCells, profile) * 3;
       if (distance(destination, player.castle) === 1) score += 850;
@@ -653,6 +839,11 @@ function scoreMove(
   } else if (unit.type === "longboat") {
     const crew = longboatPassengers(state, unit.id).length;
     const missionGoals = context.longboatGoals.get(unit.id) ?? [];
+    const mission = context.plan.transportMissions?.[unit.id];
+    const waitingCrew = mission?.crewIds.filter((crewId) =>
+      state.units.some((candidate) => candidate.id === crewId && candidate.embarkedOn !== unit.id),
+    ).length ?? 0;
+    if (waitingCrew > 0) score -= 1200;
     score += routeProgress(state, unit, destination, missionGoals, profile) * (crew > 0 ? 2 : 1.25);
     if (ramTarget) score += 1200;
     if (crew > 0 && targetCastle) {
@@ -811,6 +1002,12 @@ function scoreMove(
 function scoreHoldPosition(state: GameState, player: Player, unit: Unit, context: AiContext): number {
   const role = context.plan.roles[unit.id];
   let score = 0;
+  const transportMission = unit.type === "longboat" ? context.plan.transportMissions?.[unit.id] : undefined;
+  if (transportMission?.crewIds.some((crewId) =>
+    state.units.some((candidate) => candidate.id === crewId && candidate.embarkedOn !== unit.id),
+  )) {
+    score += 1000;
+  }
   if (role === "raider" && context.targetCastle && !context.assaultReady) {
     const targetDistance = distance(unit.position, context.targetCastle.castle);
     if (targetDistance >= 5 && targetDistance <= 8) {
@@ -951,6 +1148,11 @@ export function chooseAiMove(state: GameState, difficulty: Difficulty): MoveActi
 
   let selected: Candidate;
   if (context.profile.candidatePool === 1) selected = candidates[0]!;
+  else if (difficulty === "hard") {
+    // Hard is consistently strong but occasionally accepts the runner-up
+    // useful action; Expert alone chooses the best scored action every time.
+    selected = variation % 5 === 0 ? candidates[Math.min(1, candidates.length - 1)]! : candidates[0]!;
+  }
   else if (difficulty === "normal") {
     selected = variation % 5 === 0 ? candidates[Math.min(1, candidates.length - 1)]! : candidates[0]!;
   } else {
@@ -1098,6 +1300,20 @@ export function chooseAiPurchase(state: GameState, difficulty: Difficulty): Unit
   ).length;
   const unclaimedChests = state.treasures.filter((chest) => !chest.carriedBy).length;
   const seaRouteUseful = !hasLandRouteToTarget(state, player, context.targetCastle);
+  const transportMissions = Object.values(context.plan.transportMissions ?? {});
+  const committedTransportBoats = transportMissions.filter((mission) =>
+    longboatPassengers(state, mission.boatId).length >= Math.min(2, mission.crewIds.length),
+  ).length;
+  const availableRaiders = ownUnits.filter((unit) =>
+    unit.type === "soldier" && !unit.embarkedOn && !unit.drunk && !carriedTreasure(state, unit.id),
+  ).length;
+  const transportExpansionUseful =
+    transportMissions.length > 0 &&
+    committedTransportBoats === transportMissions.length &&
+    emptyBoats === 0 &&
+    availableRaiders >= 3 &&
+    counts.soldier >= (difficulty === "expert" ? 8 : 6) &&
+    counts.longboat < 2;
 
   const scores: Record<UnitType, number> = {
     soldier:
@@ -1120,13 +1336,14 @@ export function chooseAiPurchase(state: GameState, difficulty: Difficulty): Unit
       (counts.longboat === 0 ? 30 : 0) +
       (counts.soldier > counts.longboat * 3 ? 20 : 0) -
       emptyBoats * 90 -
-      counts.longboat * 20,
+      counts.longboat * 20 +
+      (transportExpansionUseful ? 90 : 0),
   };
 
   if (difficulty === "expert") {
     // A third raider is useful reinforcement, but must never delay the first
     // coordinated pair. Prefer enough Soldiers to sustain a second wave.
-    if (context.targetCastle && counts.soldier < 7) scores.soldier += 28;
+    if (context.targetCastle && counts.soldier < 8) scores.soldier += 45;
 
     // Buy siege support against a substantial land force, without filling the
     // courtyard with Catapults that cannot directly capture the castle.
@@ -1150,7 +1367,10 @@ export function chooseAiPurchase(state: GameState, difficulty: Difficulty): Unit
   if (candidates.length === 0) return undefined;
 
   const variation = (state.seed ^ (state.round * 2246822519) ^ ownUnits.length * 97) >>> 0;
-  if (difficulty === "hard" || difficulty === "expert") return candidates[0]!.type;
+  if (difficulty === "expert") return candidates[0]!.type;
+  if (difficulty === "hard") {
+    return (variation % 5 === 0 ? candidates[Math.min(1, candidates.length - 1)] : candidates[0])!.type;
+  }
   if (difficulty === "normal") {
     return (variation % 5 === 0 ? candidates[Math.min(1, candidates.length - 1)] : candidates[0])!.type;
   }

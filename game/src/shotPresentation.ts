@@ -5,6 +5,8 @@ export type ImpactKind =
   | "enemy-hit"
   | "friendly-hit"
   | "longboat-hit"
+  | "sturdy-longboat"
+  | "shield-wall"
   | "castle"
   | "converted"
   | "water"
@@ -26,6 +28,7 @@ interface ShotContext {
   shooterPlayerId: PlayerId;
   occupants: Record<string, { id: string; playerId: PlayerId; type: UnitType; drunk?: boolean; unit: Unit }>;
   castles: Record<string, PlayerId>;
+  sturdyLongboatProtection: Partial<Record<PlayerId, number>>;
 }
 
 export function captureShotContext(
@@ -56,6 +59,9 @@ export function captureShotContext(
     shooterPlayerId: catapult.playerId,
     occupants,
     castles,
+    sturdyLongboatProtection: Object.fromEntries(
+      state.players.map((player) => [player.id, player.sturdyLongboatProtection]),
+    ),
   };
 }
 
@@ -73,7 +79,21 @@ export function completeShotPresentation(
   const destroyedUnit = previousOccupant && !survivor ? previousOccupant.unit : undefined;
   let impact: ImpactKind = "miss";
   if (previousOccupant) {
-    impact = previousOccupant.drunk && survivor?.playerId === context.shooterPlayerId
+    const sturdyLongboatSaved =
+      previousOccupant.type === "longboat" &&
+      Boolean(survivor) &&
+      (context.sturdyLongboatProtection[previousOccupant.playerId] ?? 0) >
+        (state.players.find((player) => player.id === previousOccupant.playerId)?.sturdyLongboatProtection ?? 0);
+    const shieldWallSaved =
+      previousOccupant.type === "soldier" &&
+      Boolean(previousOccupant.unit.shieldWall) &&
+      Boolean(survivor) &&
+      !survivor?.shieldWall;
+    impact = sturdyLongboatSaved
+      ? "sturdy-longboat"
+      : shieldWallSaved
+        ? "shield-wall"
+      : previousOccupant.drunk && survivor?.playerId === context.shooterPlayerId
       ? "converted"
       : previousOccupant.type === "longboat"
         ? "longboat-hit"
@@ -91,7 +111,7 @@ export function completeShotPresentation(
     landedAt: { ...shot.landedAt },
     shooterPlayerId: context.shooterPlayerId,
     impact,
-    sunkUnit: impact === "longboat-hit" ? previousOccupant?.unit : undefined,
+    sunkUnit: impact === "longboat-hit" && !survivor ? previousOccupant?.unit : undefined,
     destroyedUnit,
   };
 }

@@ -4,12 +4,25 @@ import type { PlayerId, Unit } from "./types";
 let audioContext: AudioContext | undefined;
 let masterGain: GainNode | undefined;
 let soundEnabled = true;
+let musicEnabled = true;
 const activeSamples = new Set<HTMLAudioElement>();
+let menuMusic: HTMLAudioElement | undefined;
+let menuMusicWanted = false;
+let battleReportMusic: HTMLAudioElement | undefined;
+let battleReportMusicWanted = false;
 const WATER_SPLOSH_SAMPLE = "/audio/water-splosh.mp3";
 const SHIP_BUBBLES_SAMPLE = "/audio/ship-sinking-bubbles.wav";
 const CATAPULT_DESTROYED_SAMPLE = "/audio/catapult-destroyed.wav";
 const CATAPULT_SOLDIER_HIT_SAMPLE = "/audio/catapult-soldier-hit.wav";
-export const BATTLE_HORN_DURATION_MS = 1_750;
+const CASTLE_ASSAULT_CHEER_SAMPLE = "/audio/castle-assault-cheer.mp3";
+const OPENING_BATTLE_HORN_SAMPLE = "/audio/opening-battle-horn.mp3";
+const MENU_MUSIC_SAMPLE = "/audio/menu-viking-theme.mp3?v=raise-the-horn-and-raid";
+const BATTLE_REPORT_MUSIC_SAMPLE = "/audio/battle-report-viking-theme.mp3";
+const MENU_MUSIC_VOLUME = 0.12;
+const BATTLE_REPORT_MUSIC_VOLUME = 0.1;
+export const BATTLE_HORN_DURATION_MS = 4_000;
+/** Keep the opening announcement on screen briefly after the horn reaches silence. */
+export const BATTLE_HORN_CEREMONY_HOLD_MS = 1_000;
 
 export function setSoundEffectsEnabled(enabled: boolean): void {
   soundEnabled = enabled;
@@ -25,6 +38,67 @@ export function setSoundEffectsEnabled(enabled: boolean): void {
   }
 }
 
+/** Music has its own setup control, independent of battlefield effects. */
+export function setMusicEnabled(enabled: boolean): void {
+  musicEnabled = enabled;
+  if (!enabled) {
+    menuMusic?.pause();
+    battleReportMusic?.pause();
+    return;
+  }
+  if (menuMusicWanted) startMenuMusic();
+  if (battleReportMusicWanted) startBattleReportMusic();
+}
+
+/** Quiet looping music for the war-council setup screen only. */
+export function startMenuMusic(): void {
+  menuMusicWanted = true;
+  if (!musicEnabled) return;
+  if (!menuMusic) {
+    menuMusic = new Audio(MENU_MUSIC_SAMPLE);
+    menuMusic.loop = true;
+    menuMusic.preload = "auto";
+    menuMusic.volume = MENU_MUSIC_VOLUME;
+  }
+  if (!menuMusic.paused) return;
+  void menuMusic.play().catch(() => {
+    // Browsers can refuse playback until a user gesture. The next setup
+    // interaction calls this function again, so no error needs surfacing.
+  });
+}
+
+/** Stop and rewind setup music before any battlefield or preview is shown. */
+export function stopMenuMusic(): void {
+  menuMusicWanted = false;
+  if (!menuMusic) return;
+  menuMusic.pause();
+  menuMusic.currentTime = 0;
+}
+
+/** Quiet loop for the Battle Report, including the final-map inspection. */
+export function startBattleReportMusic(): void {
+  battleReportMusicWanted = true;
+  if (!musicEnabled) return;
+  if (!battleReportMusic) {
+    battleReportMusic = new Audio(BATTLE_REPORT_MUSIC_SAMPLE);
+    battleReportMusic.loop = true;
+    battleReportMusic.preload = "auto";
+    battleReportMusic.volume = BATTLE_REPORT_MUSIC_VOLUME;
+  }
+  if (!battleReportMusic.paused) return;
+  void battleReportMusic.play().catch(() => {
+    // A match is normally started by a click, unlocking this quiet end-game loop.
+  });
+}
+
+/** End the report loop only when leaving the completed match. */
+export function stopBattleReportMusic(): void {
+  battleReportMusicWanted = false;
+  if (!battleReportMusic) return;
+  battleReportMusic.pause();
+  battleReportMusic.currentTime = 0;
+}
+
 /** Browsers allow sound only after a player gesture, such as starting the match. */
 export async function primeAudio(): Promise<void> {
   if (!soundEnabled) return;
@@ -32,10 +106,10 @@ export async function primeAudio(): Promise<void> {
   if (context.state === "suspended") await context.resume();
 }
 
-/** The opening call that accompanies the player's Sound the horn action. */
+/** The supplied cinematic call used at match start and for a captured castle. */
 export function playBattleHorn(): void {
-  // A low, two-call rallying blast rather than a short musical beep.
-  playHornPhrase([98, 147], 0.76, 0.12, 1.18);
+  // Use only the opening four seconds, tapering to silence at the end.
+  playAudioSample(OPENING_BATTLE_HORN_SAMPLE, 0.68, BATTLE_HORN_DURATION_MS, 850);
 }
 
 /** Each faction receives a recognisable, but equally short, victory flourish. */
@@ -49,7 +123,16 @@ export function playVictoryHorn(playerId: PlayerId): void {
   playHornPhrase(phrases[playerId], 0.56, 0.075, 1);
 }
 
-/** A restrained procedural gust used only while a new winter band fades in. */
+/**
+ * The opening three seconds of the supplied Viking celebration play while a
+ * castle is under assault. It deliberately ends before the capture-only
+ * fanfare, and is heard for both successful and repelled attacks.
+ */
+export function playCastleAssaultCheer(): void {
+  playAudioSample(CASTLE_ASSAULT_CHEER_SAMPLE, 0.52, 3_000, 700);
+}
+
+/** A clearly audible procedural cold gust used while each new winter band fades in. */
 export function playWinterWind(durationMilliseconds = 1_600): void {
   const context = usableContext();
   if (!context || !masterGain) return;
@@ -60,24 +143,33 @@ export function playWinterWind(durationMilliseconds = 1_600): void {
   const samples = buffer.getChannelData(0);
   let gust = 0;
   for (let index = 0; index < frameCount; index += 1) {
-    gust = gust * 0.985 + (Math.random() * 2 - 1) * 0.015;
-    const swell = 0.55 + Math.sin((index / frameCount) * Math.PI * 3.4) * 0.22;
+    gust = gust * 0.982 + (Math.random() * 2 - 1) * 0.028;
+    const swell = 0.62 + Math.sin((index / frameCount) * Math.PI * 2.7) * 0.28;
     samples[index] = gust * swell;
   }
   const source = context.createBufferSource();
   const filter = context.createBiquadFilter();
+  const lowRumble = context.createBiquadFilter();
   const gain = context.createGain();
+  const rumbleGain = context.createGain();
   source.buffer = buffer;
   filter.type = "bandpass";
-  filter.frequency.setValueAtTime(720, now);
-  filter.frequency.linearRampToValueAtTime(980, now + duration * 0.55);
-  filter.frequency.linearRampToValueAtTime(620, now + duration);
-  filter.Q.value = 0.55;
+  filter.frequency.setValueAtTime(520, now);
+  filter.frequency.linearRampToValueAtTime(1_280, now + duration * 0.55);
+  filter.frequency.linearRampToValueAtTime(460, now + duration);
+  filter.Q.value = 0.42;
+  lowRumble.type = "lowpass";
+  lowRumble.frequency.setValueAtTime(260, now);
+  lowRumble.frequency.linearRampToValueAtTime(170, now + duration);
   gain.gain.setValueAtTime(0.001, now);
-  gain.gain.linearRampToValueAtTime(0.085, now + Math.min(0.22, duration * 0.2));
-  gain.gain.setValueAtTime(0.07, now + Math.max(0.24, duration - 0.28));
+  gain.gain.linearRampToValueAtTime(0.21, now + Math.min(0.24, duration * 0.2));
+  gain.gain.setValueAtTime(0.16, now + Math.max(0.28, duration - 0.3));
   gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+  rumbleGain.gain.setValueAtTime(0.001, now);
+  rumbleGain.gain.linearRampToValueAtTime(0.075, now + Math.min(0.32, duration * 0.25));
+  rumbleGain.gain.exponentialRampToValueAtTime(0.001, now + duration);
   source.connect(filter).connect(gain).connect(masterGain);
+  source.connect(lowRumble).connect(rumbleGain).connect(masterGain);
   source.start(now);
 }
 
@@ -346,19 +438,21 @@ function playAudioSample(
     activeSamples.delete(sample);
     sample.remove();
   });
-  if (fadeOutMilliseconds > 0) {
-    window.setTimeout(() => {
-      const steps = 8;
-      const stepMilliseconds = Math.max(16, Math.floor(fadeOutMilliseconds / steps));
-      let step = 0;
-      const taper = window.setInterval(() => {
-        step += 1;
+  const fadeDuration = Math.min(maximumMilliseconds, Math.max(0, fadeOutMilliseconds));
+  if (fadeDuration > 0) {
+    const fadeStart = maximumMilliseconds - fadeDuration;
+    const steps = 12;
+    for (let step = 1; step <= steps; step += 1) {
+      window.setTimeout(() => {
+        if (!activeSamples.has(sample)) return;
         sample.volume = Math.max(0, volume * (1 - step / steps));
-        if (step >= steps) window.clearInterval(taper);
-      }, stepMilliseconds);
-    }, Math.max(0, maximumMilliseconds - fadeOutMilliseconds));
+      }, fadeStart + Math.round((fadeDuration * step) / steps));
+    }
   }
   window.setTimeout(() => {
+    // The final fade callback and this timeout may share a clock tick.  Set
+    // volume explicitly so short samples never get cut off above silence.
+    sample.volume = 0;
     sample.pause();
     activeSamples.delete(sample);
     sample.remove();

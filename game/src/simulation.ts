@@ -15,9 +15,13 @@ import {
   endTurn,
   fireCatapult,
   forfeitPendingCatapultFire,
+  getLegalMoves,
   longboatPassengers,
+  longboatIsFrozen,
   moveDrunkSoldier,
   moveUnit,
+  playerAtCastle,
+  unitAt,
 } from "./core";
 import {
   captureMovementContext,
@@ -69,6 +73,22 @@ export interface ComputerTurnSummary {
   unusedPurchaseOpportunities: number;
   purchaseBlockedBySpace: boolean;
   atSoftUnitCap: boolean;
+  transportBoardings: number;
+  crewedBoatMoves: number;
+  emptyBoatMoves: number;
+  transportMissionTurns: number;
+  transportAssignedCrew: number;
+  transportWaitingTurns: number;
+  frozenTransportTurns: number;
+  landingDistanceTotal: number;
+  immediateCastleOpportunity: number;
+  missedImmediateCastleOpportunity: number;
+  assaultStagingTurn: number;
+  stagedRaidersHeld: number;
+  assignedRaiders: number;
+  assignedDefenders: number;
+  targetChanges: number;
+  noMoveTurn: number;
 }
 
 async function emitStep(
@@ -123,6 +143,7 @@ export async function executeComputerTurn(
   const difficulty = initialPlayer.controller;
   const initialUnitCount = state.units.length;
   const initialLogLength = state.log.length;
+  const initialTargetPlayerId = state.aiPlans[initialPlayer.id]?.targetPlayerId;
   const summary: ComputerTurnSummary = {
     playerId: initialPlayer.id,
     difficulty,
@@ -143,9 +164,34 @@ export async function executeComputerTurn(
     unusedPurchaseOpportunities: 0,
     purchaseBlockedBySpace: false,
     atSoftUnitCap: false,
+    transportBoardings: 0,
+    crewedBoatMoves: 0,
+    emptyBoatMoves: 0,
+    transportMissionTurns: 0,
+    transportAssignedCrew: 0,
+    transportWaitingTurns: 0,
+    frozenTransportTurns: 0,
+    landingDistanceTotal: 0,
+    immediateCastleOpportunity: 0,
+    missedImmediateCastleOpportunity: 0,
+    assaultStagingTurn: 0,
+    stagedRaidersHeld: 0,
+    assignedRaiders: 0,
+    assignedDefenders: 0,
+    targetChanges: 0,
+    noMoveTurn: 0,
   };
 
   if (includeDrunkOpening) summary.drunkMoves = await executeDrunkOpeningMoves(state, hooks);
+  summary.immediateCastleOpportunity = state.units.some((unit) =>
+    unit.playerId === initialPlayer.id &&
+    unit.type === "soldier" &&
+    !unit.embarkedOn &&
+    getLegalMoves(state, unit.id).some((destination) => {
+      const castle = playerAtCastle(state, destination);
+      return Boolean(castle && castle.id !== initialPlayer.id);
+    }),
+  ) ? 1 : 0;
 
   // Stronger opponents coordinate artillery before committing their raiders.
   // Each Catapult reassesses after the previous impact, so two weapons do not
@@ -170,9 +216,23 @@ export async function executeComputerTurn(
     if (!action) break;
     state.log.unshift(`${initialPlayer.name} ${describeAiIntent(state, action)}.`);
     const actingUnit = state.units.find((unit) => unit.id === action.unitId);
+    const destinationUnit = unitAt(state, action.destination);
+    const passengersBeforeMove = actingUnit?.type === "longboat"
+      ? longboatPassengers(state, actingUnit.id).length
+      : 0;
     const movementContext = captureMovementContext(state, action.unitId, action.destination);
     if (!moveUnit(state, action.unitId, action.destination)) break;
     summary.moves += 1;
+    if (actingUnit?.type === "longboat") {
+      if (passengersBeforeMove > 0) summary.crewedBoatMoves += 1;
+      else summary.emptyBoatMoves += 1;
+    }
+    if (
+      actingUnit?.type === "soldier" &&
+      destinationUnit?.type === "longboat" &&
+      destinationUnit.playerId === initialPlayer.id &&
+      state.units.find((unit) => unit.id === actingUnit.id)?.embarkedOn === destinationUnit.id
+    ) summary.transportBoardings += 1;
     await emitStep(
       hooks,
       "move",
@@ -202,6 +262,7 @@ export async function executeComputerTurn(
         longboatPassengers(state, unit.id).length > 0,
     );
     for (const boat of crewedBoats) {
+      let landedFromBoat = 0;
       while (longboatPassengers(state, boat.id).length > 0) {
         const landing = chooseAiDisembark(state, boat.id);
         const passenger = longboatPassengers(state, boat.id)[0];
@@ -214,7 +275,29 @@ export async function executeComputerTurn(
           : undefined;
         if (!landing || !disembarkSoldier(state, boat.id, landing)) break;
         summary.landings += 1;
+        landedFromBoat += 1;
+        const nearestEnemy = state.players
+          .filter((candidate) => candidate.id !== initialPlayer.id && !candidate.eliminated)
+          .sort((a, b) =>
+            Math.max(Math.abs(a.castle.x - landing.x), Math.abs(a.castle.y - landing.y)) -
+            Math.max(Math.abs(b.castle.x - landing.x), Math.abs(b.castle.y - landing.y)),
+          )[0];
+        if (nearestEnemy) {
+          summary.landingDistanceTotal += Math.max(
+            Math.abs(nearestEnemy.castle.x - landing.x),
+            Math.abs(nearestEnemy.castle.y - landing.y),
+          );
+        }
         await emitStep(hooks, "disembark", state, presentation);
+      }
+      if (landedFromBoat > 0) {
+        const plan = state.aiPlans[initialPlayer.id];
+        const missions = plan?.transportMissions;
+        if (missions) delete missions[boat.id];
+        if (plan) {
+          plan.transportCooldowns ??= {};
+          plan.transportCooldowns[boat.id] = state.round + 1;
+        }
       }
     }
   }
@@ -263,6 +346,50 @@ export async function executeComputerTurn(
     !unit.embarkedOn &&
     Math.max(Math.abs(unit.position.x - home.x), Math.abs(unit.position.y - home.y)) <= 2,
   ).length;
+  const transportMissions = Object.values(state.aiPlans[initialPlayer.id]?.transportMissions ?? {});
+  summary.transportMissionTurns = transportMissions.length;
+  summary.transportAssignedCrew = transportMissions.reduce((total, mission) => total + mission.crewIds.length, 0);
+  summary.transportWaitingTurns = transportMissions.filter((mission) =>
+    mission.crewIds.some((crewId) =>
+      state.units.some((unit) => unit.id === crewId && unit.embarkedOn !== mission.boatId),
+    ),
+  ).length;
+  summary.frozenTransportTurns = transportMissions.filter((mission) => {
+    const boat = state.units.find((unit) => unit.id === mission.boatId && unit.type === "longboat");
+    return Boolean(boat && longboatIsFrozen(state, boat));
+  }).length;
+  const finalPlan = state.aiPlans[initialPlayer.id];
+  const roles = finalPlan?.roles ?? {};
+  const raiders = state.units.filter((unit) =>
+    unit.playerId === initialPlayer.id &&
+    unit.type === "soldier" &&
+    !unit.embarkedOn &&
+    !unit.drunk &&
+    roles[unit.id] === "raider",
+  );
+  const targetCastle = finalPlan?.targetPlayerId
+    ? state.players.find((candidate) => candidate.id === finalPlan.targetPlayerId && !candidate.eliminated)
+    : undefined;
+  const committedRaiders = targetCastle
+    ? raiders.filter((unit) => Math.max(
+      Math.abs(unit.position.x - targetCastle.castle.x),
+      Math.abs(unit.position.y - targetCastle.castle.y),
+    ) <= 9).length
+    : 0;
+  summary.assignedRaiders = raiders.length;
+  summary.assignedDefenders = Object.values(roles).filter((role) => role === "castle-defender").length;
+  summary.assaultStagingTurn = targetCastle && raiders.length >= 2 && committedRaiders < 2 ? 1 : 0;
+  summary.stagedRaidersHeld = targetCastle
+    ? raiders.filter((unit) => {
+      const targetDistance = Math.max(
+        Math.abs(unit.position.x - targetCastle.castle.x),
+        Math.abs(unit.position.y - targetCastle.castle.y),
+      );
+      return !unit.moved && targetDistance >= 5 && targetDistance <= 8;
+    }).length
+    : 0;
+  summary.targetChanges = initialTargetPlayerId && finalPlan?.targetPlayerId && initialTargetPlayerId !== finalPlan.targetPlayerId ? 1 : 0;
+  summary.noMoveTurn = summary.moves === 0 ? 1 : 0;
 
   if (!state.winnerId) {
     endTurn(state);
@@ -273,6 +400,7 @@ export async function executeComputerTurn(
   summary.combats = newEntries.filter((entry) => entry.includes("wins a clash") || entry.includes("overruns")).length;
   summary.castleAttacks = newEntries.filter((entry) => entry.includes("castle repels") || entry.includes("captures") && entry.includes("castle")).length;
   summary.castleCaptures = newEntries.filter((entry) => entry.includes("captures") && entry.includes("castle")).length;
+  summary.missedImmediateCastleOpportunity = summary.immediateCastleOpportunity > 0 && summary.castleAttacks === 0 ? 1 : 0;
   summary.treasureCollections = newEntries.filter((entry) => entry.includes("picks up a") && entry.includes("treasure chest")).length;
   summary.treasureDeposits = newEntries.filter((entry) => entry.includes("deposits treasure") || entry.includes("banks") && entry.includes("gold")).length;
   summary.veteranPromotions = newEntries.filter((entry) => entry.includes("becomes a Veteran")).length;

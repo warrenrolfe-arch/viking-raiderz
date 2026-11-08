@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Viking Raiderz — Shareable MP4 Gameplay Trailer</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #0b2732; color: #fff5c7; font-family: Arial, sans-serif; }
+    main { text-align: center; padding: 16px; }
+    #output { width: min(94vw,1280px); aspect-ratio:16/9; background:#102f3a; border:5px solid #f4c34d; border-radius:14px; box-shadow:0 18px 60px #020e13; }
+    #game { position:fixed; left:-10000px; top:0; width:1500px; height:1200px; border:0; }
+    .controls { margin-top:12px; display:flex; align-items:center; justify-content:center; gap:12px; }
+    button,a { border:0; border-radius:999px; padding:13px 22px; background:#f4c34d; color:#17323a; font-size:16px; font-weight:900; text-decoration:none; cursor:pointer; }
+    button:disabled { opacity:.5; cursor:wait; }
+    #download { display:none; background:#64c981; }
+    #status { min-width:260px; text-align:left; }
+  </style>
+</head>
+<body>
+  <main>
+    <canvas id="output" width="1280" height="720" aria-label="Viking Raiderz live gameplay trailer"></canvas>
+    <div class="controls">
+      <button id="record" disabled>Prepare the raiders…</button>
+      <a id="download" download="Viking-Raiderz-Gameplay-Trailer-v3.mp4">Download shareable MP4</a>
+      <span id="status">Loading the battlefield.</span>
+    </div>
+  </main>
+  <iframe id="game" src="/?gameplayTrailer=1" title="Automated Viking Raiderz match"></iframe>
+  <script type="module">
+    const iframe = document.querySelector('#game');
+    const canvas = document.querySelector('#output');
+    const ctx = canvas.getContext('2d');
+    const recordButton = document.querySelector('#record');
+    const download = document.querySelector('#download');
+    const status = document.querySelector('#status');
+    const W = canvas.width, H = canvas.height, duration = 60;
+    const mp4Mime = [
+      'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+      'video/mp4;codecs=avc1,mp4a.40.2',
+      'video/mp4',
+    ].find(candidate => MediaRecorder.isTypeSupported(candidate));
+    let ready = false, recording = false, startedAt = performance.now();
+    let lastSaga = { title: 'THE SAGA DECK', outcome: 'Forty ways for a perfectly good plan to become interesting.', seenAt: -99 };
+    let lastCardSequence = '';
+
+    const clamp = (n,a=0,b=1)=>Math.max(a,Math.min(b,n));
+    const ease = n => n < .5 ? 2*n*n : 1-Math.pow(-2*n+2,2)/2;
+    function rr(x,y,w,h,r,fill,stroke,width=3){ctx.beginPath();ctx.roundRect(x,y,w,h,r);if(fill){ctx.fillStyle=fill;ctx.fill();}if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=width;ctx.stroke();}}
+    function label(value,x,y,size,color='#fff5c7',align='center',stroke='#17323a',font='Georgia'){ctx.font=`900 ${size}px ${font}`;ctx.textAlign=align;ctx.textBaseline='middle';if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=Math.max(3,size/11);ctx.strokeText(value,x,y);}ctx.fillStyle=color;ctx.fillText(value,x,y);}
+
+    function configureGame(){
+      const doc=iframe.contentDocument;
+      const controllers=[...doc.querySelectorAll('#player-slots select')];
+      const choices=['normal','hard','expert','normal'];
+      controllers.forEach((select,index)=>{select.value=choices[index];select.dispatchEvent(new Event('change',{bubbles:true}));});
+      const pace=doc.querySelector('#ai-pace'); pace.value='rapid'; pace.dispatchEvent(new Event('change',{bubbles:true}));
+      const cards=doc.querySelector('#event-card-frequency'); cards.value='every-turn'; cards.dispatchEvent(new Event('change',{bubbles:true}));
+      doc.querySelector('#random-starting-player').checked=true;
+      doc.querySelector('#random-player-order').checked=true;
+      doc.querySelector('#winter-enabled').checked=true;
+      doc.querySelector('#sound-effects-enabled').checked=false;
+      doc.querySelector('#start-game').click();
+      ready=Boolean(mp4Mime); recordButton.disabled=!mp4Mime;
+      recordButton.textContent=mp4Mime?'Record shareable MP4 trailer':'MP4 recording unavailable';
+      status.textContent=mp4Mime?'Four computer Jarls are ready — H.264 MP4 supported.':'This browser cannot create a Messenger-compatible MP4.';
+    }
+
+    iframe.addEventListener('load',()=>setTimeout(configureGame,900));
+
+    function gameCanvas(){return iframe.contentDocument?.querySelector('#game-canvas canvas');}
+    function observeSaga(){
+      const doc=iframe.contentDocument; if(!doc) return;
+      const reveal=doc.querySelector('#event-reveal');
+      if(reveal && !reveal.hidden){
+        const title=doc.querySelector('#event-title')?.textContent?.trim()||'SAGA CARD';
+        const outcome=doc.querySelector('#event-outcome')?.textContent?.trim()||'The Norns decline to explain.';
+        const sequence=`${title}|${outcome}`;
+        if(sequence!==lastCardSequence){lastCardSequence=sequence;lastSaga={title:title.toUpperCase(),outcome,seenAt:(performance.now()-startedAt)/1000};}
+        doc.querySelector('#event-continue')?.click();
+      }
+    }
+    setInterval(observeSaga,180);
+
+    function drawBattlefield(time){
+      const source=gameCanvas();
+      ctx.fillStyle='#102f3a';ctx.fillRect(0,0,W,H);
+      if(source){
+        const sourceRatio=source.width/source.height, targetW=960, targetH=720;
+        let sx=0,sy=0,sw=source.width,sh=source.height;
+        if(sourceRatio>targetW/targetH){sw=source.height*targetW/targetH;sx=(source.width-sw)/2;}
+        else{sh=source.width/(targetW/targetH);sy=(source.height-sh)/2;}
+        ctx.drawImage(source,sx,sy,sw,sh,0,0,targetW,targetH);
+      } else { label('SUMMONING THE FJORD…',480,360,38); }
+      const gradient=ctx.createLinearGradient(950,0,1280,0);gradient.addColorStop(0,'rgba(11,39,50,.72)');gradient.addColorStop(.1,'#0b2732');gradient.addColorStop(1,'#173b4b');ctx.fillStyle=gradient;ctx.fillRect(940,0,340,H);
+      ctx.fillStyle='#f4c34d';ctx.fillRect(954,0,5,H);
+      label('VIKING',1110,48,36,'#fff5c7');label('RAIDERZ',1110,88,40,'#f0783d');
+      label('THE SAGA CONTINUES',1110,122,15,'#f4c34d','center',null,'Arial');
+      const doc=iframe.contentDocument;
+      const round=doc?.querySelector('#round-label')?.textContent?.trim()||'The fjord awaits';
+      const turn=doc?.querySelector('#turn-indicator')?.textContent?.trim()||'Sound the horn';
+      rr(978,155,278,72,14,'rgba(255,247,214,.09)','#477585',2);
+      label(round,1117,178,18,'#d9f4f3','center',null,'Arial');label(turn,1117,208,22,'#fff5c7','center',null,'Arial');
+      const sagaAge=time-lastSaga.seenAt;
+      rr(978,250,278,245,18,'#fff7df','#f4c34d',4);
+      label('SAGA CARD',1117,278,15,'#80582f','center',null,'Arial');
+      label(lastSaga.title.slice(0,22),1117,322,24,'#173b4b');
+      ctx.fillStyle='#b44b78';ctx.beginPath();ctx.arc(1117,375,36,0,Math.PI*2);ctx.fill();label('✦',1117,375,43,'#fff5c7','center',null,'Arial');
+      ctx.font='700 16px Arial';ctx.textAlign='center';ctx.fillStyle='#4d4032';
+      const words=lastSaga.outcome.split(/\s+/);let line='',lines=[];for(const word of words){const trial=`${line} ${word}`.trim();if(ctx.measureText(trial).width>235){lines.push(line);line=word;}else line=trial;}if(line)lines.push(line);
+      lines.slice(0,4).forEach((value,index)=>ctx.fillText(value,1117,430+index*21));
+      if(sagaAge<2.2){ctx.strokeStyle=`rgba(244,195,77,${1-sagaAge/2.2})`;ctx.lineWidth=9;ctx.strokeRect(966,238,302,269);}
+      rr(978,530,278,135,18,'rgba(255,247,214,.08)','#477585',2);
+      label('⚔  REAL GAMEPLAY',1117,560,18,'#f4c34d','center',null,'Arial');
+      label('4 COMPUTER JARLS',1117,594,17,'#d9f4f3','center',null,'Arial');
+      label('WINTER + 40 CARDS',1117,626,17,'#d9f4f3','center',null,'Arial');
+      label('NO VIKINGS WERE CONSULTED',1117,691,12,'#8cb7bf','center',null,'Arial');
+    }
+
+    const captions=[
+      [0,4,'REAL GAMEPLAY. REAL VIKINGS.','Mostly real judgement.'],
+      [6,12,'RAISE AN ARMY','Soldiers, Veterans and catastrophic confidence.'],
+      [13,20,'CREW THE LONGBOATS','Up to three Vikings. Still no seatbelts.'],
+      [21,28,'FIRE THE CATAPULTS','Aim carefully. Scatter enthusiastically.'],
+      [29,36,'DRAW A SAGA CARD','Forty surprises waiting to ruin somebody’s afternoon.'],
+      [37,44,'FIND THE TREASURE','Return it home. Try not to find the mead first.'],
+      [45,52,'WINTER IS COMING','When the fjord freezes, walk across it. Obviously.'],
+      [53,56,'CAPTURE THE CASTLES','Become legendary. Or at least extremely inconvenient.'],
+    ];
+    function drawCaption(time){
+      const caption=captions.find(([start,end])=>time>=start&&time<end);if(!caption)return;
+      const [start,end,title,sub]=caption;const a=Math.min(clamp((time-start)/.55),clamp((end-time)/.55));
+      ctx.globalAlpha=a;rr(40,555,875,115,18,'rgba(12,39,49,.83)','#f4c34d',4);label(title,477,588,34,'#ffd45c');label(sub,477,635,20,'#fff5c7','center',null,'Arial');ctx.globalAlpha=1;
+    }
+    function drawIntroOutro(time){
+      if(time<3.6){const a=1-clamp((time-2.8)/.8);ctx.globalAlpha=a;ctx.fillStyle='rgba(9,31,39,.86)';ctx.fillRect(0,0,W,H);label('VIKING RAIDERZ',W/2,265,92,'#fff5c7');label('THE SAGA CONTINUES',W/2,350,38,'#f0783d','center','#17323a','Arial');label('ONE FJORD. FOUR FACTIONS. MANY BAD IDEAS.',W/2,435,25,'#f4c34d','center',null,'Arial');ctx.globalAlpha=1;}
+      if(time>=56){const a=clamp((time-56)/.7);ctx.globalAlpha=a;ctx.fillStyle='rgba(9,31,39,.93)';ctx.fillRect(0,0,W,H);label('SOUND THE HORN',W/2,205,70,'#ffd45c');label('VIKING RAIDERZ',W/2,300,84,'#fff5c7');label('THE SAGA CONTINUES',W/2,373,32,'#f0783d','center','#17323a','Arial');label('1–4 PLAYERS  •  HOT-SEAT  •  FIVE AI LEVELS',W/2,475,25,'#d9f4f3','center',null,'Arial');rr(390,535,500,70,35,'#f4c34d','#fff5c7',3);label('RAISE A CREW. BORROW A CASTLE.',W/2,570,21,'#17323a','center',null,'Arial');ctx.globalAlpha=1;}
+    }
+    function render(now){const time=recording?Math.min(duration,(now-startedAt)/1000):((now-startedAt)/1000)%duration;drawBattlefield(time);drawCaption(time);drawIntroOutro(time);requestAnimationFrame(render);}requestAnimationFrame(render);
+
+    function soundtrack(ac,destination){
+      // Every source has a short envelope and a definite stop. There is deliberately
+      // no continuous oscillator or drone, leaving clean silence between phrases.
+      const master=ac.createGain();master.gain.value=.16;
+      const compressor=ac.createDynamicsCompressor();compressor.threshold.value=-18;compressor.knee.value=12;compressor.ratio.value=3;compressor.attack.value=.01;compressor.release.value=.2;
+      master.connect(compressor).connect(destination);const start=ac.currentTime+.04;
+      const melody=[220,246.94,293.66,329.63,293.66,246.94,196,220];
+      const pluck=(at,frequency,volume=.07)=>{const string=ac.createOscillator(),body=ac.createOscillator(),filter=ac.createBiquadFilter(),gain=ac.createGain();string.type='triangle';body.type='sine';string.frequency.value=frequency;body.frequency.value=frequency/2;filter.type='lowpass';filter.frequency.setValueAtTime(2100,at);filter.frequency.exponentialRampToValueAtTime(620,at+.42);gain.gain.setValueAtTime(.001,at);gain.gain.linearRampToValueAtTime(volume,at+.012);gain.gain.exponentialRampToValueAtTime(.001,at+.48);string.connect(filter);body.connect(filter);filter.connect(gain).connect(master);string.start(at);body.start(at);string.stop(at+.5);body.stop(at+.5);};
+      const drum=(at,accent=false)=>{const skin=ac.createOscillator(),gain=ac.createGain();skin.type='sine';skin.frequency.setValueAtTime(accent?105:82,at);skin.frequency.exponentialRampToValueAtTime(42,at+.16);gain.gain.setValueAtTime(accent?.3:.16,at);gain.gain.exponentialRampToValueAtTime(.001,at+.22);skin.connect(gain).connect(master);skin.start(at);skin.stop(at+.23);};
+      const horn=(at)=>{for(const [index,ratio] of [1,1.5,2].entries()){const voice=ac.createOscillator(),gain=ac.createGain(),filter=ac.createBiquadFilter();voice.type=index===0?'triangle':'sine';voice.frequency.setValueAtTime(123.47*ratio,at+index*.05);voice.frequency.linearRampToValueAtTime(146.83*ratio,at+1.05);filter.type='lowpass';filter.frequency.value=1250;gain.gain.setValueAtTime(.001,at);gain.gain.linearRampToValueAtTime(.055/(index+1),at+.12);gain.gain.exponentialRampToValueAtTime(.001,at+1.22);voice.connect(filter).connect(gain).connect(master);voice.start(at+index*.05);voice.stop(at+1.25);}};
+      for(let bar=0;bar<30;bar++){
+        const base=start+bar*2;drum(base,true);drum(base+.5);drum(base+1);drum(base+1.5);
+        // Short two-bar lute phrases, followed by breathing room.
+        if(bar%2===0){for(let note=0;note<4;note++)pluck(base+.12+note*.32,melody[(bar+note)%melody.length],note===0?.075:.055);}
+      }
+      for(const offset of [0,20.5,44.5,56])horn(start+offset);
+    }
+
+    recordButton.addEventListener('click',async()=>{
+      if(!ready)return;recordButton.disabled=true;download.style.display='none';recording=true;startedAt=performance.now();lastSaga.seenAt=-99;
+      const ac=new AudioContext();await ac.resume();const audio=ac.createMediaStreamDestination();soundtrack(ac,audio);
+      const video=canvas.captureStream(30);const stream=new MediaStream([...video.getVideoTracks(),...audio.stream.getAudioTracks()]);
+      if(!mp4Mime){status.textContent='MP4 recording is unavailable in this browser.';recordButton.disabled=true;return;}
+      const mime=mp4Mime;const recorder=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:8_000_000,audioBitsPerSecond:160_000});const chunks=[];
+      recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};recorder.onstop=()=>{const blob=new Blob(chunks,{type:mime});download.href=URL.createObjectURL(blob);download.style.display='inline-block';status.textContent=`Ready — ${(blob.size/1024/1024).toFixed(1)} MB, 60-second H.264/AAC MP4.`;recordButton.disabled=false;recordButton.textContent='Record another clean MP4';recording=false;ac.close();};
+      recorder.start(1000);const ticker=setInterval(()=>{status.textContent=`Recording battle… ${Math.floor(Math.min(60,(performance.now()-startedAt)/1000))} / 60 seconds`;},500);setTimeout(()=>{clearInterval(ticker);recorder.stop();},60120);
+    });
+  </script>
+</body>
+</html>

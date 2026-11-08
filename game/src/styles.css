@@ -98,11 +98,53 @@ main {
   padding: 1.5rem 0 3rem;
 }
 
+.heritage-note {
+  position: relative;
+  max-width: 1050px;
+  margin: 0 auto;
+  padding: 1rem 1.35rem;
+  border: 1px solid rgba(135, 89, 28, 0.25);
+  border-radius: 14px;
+  background: rgba(255, 248, 233, 0.78);
+  box-shadow: 0 10px 25px rgba(39, 114, 133, 0.1);
+  color: #4f5345;
+  text-align: center;
+}
+
+.heritage-note::before {
+  content: "᛭";
+  position: absolute;
+  top: -0.85rem;
+  left: 50%;
+  display: grid;
+  width: 1.7rem;
+  height: 1.7rem;
+  place-items: center;
+  transform: translateX(-50%);
+  border: 1px solid rgba(135, 89, 28, 0.28);
+  border-radius: 50%;
+  background: var(--panel);
+  color: var(--gold-dark);
+  font-family: "Almendra", Georgia, serif;
+}
+
+.heritage-note p {
+  max-width: none;
+  margin: 0 auto;
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.heritage-note p + p {
+  margin-top: 0.45rem;
+  color: var(--ink);
+}
+
 .setup-card {
   position: relative;
   overflow: hidden;
   max-width: 1050px;
-  margin: 3rem auto 0;
+  margin: 1.5rem auto 0;
   border: 1px solid var(--line);
   border-radius: 24px;
   background:
@@ -148,10 +190,80 @@ main {
 .ai-pace-control {
   display: grid;
   gap: 0.4rem;
-  max-width: 27rem;
-  padding: 1.2rem 2rem;
+  width: min(100%, 27rem);
+  padding: 0;
   color: var(--ink);
   font-weight: 700;
+}
+
+.setup-launch-controls {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 1.2rem 2rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 74%, transparent);
+}
+
+.longhouse-links {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+  padding: 1rem 2rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 74%, transparent);
+  background: color-mix(in srgb, #f4d98a 16%, transparent);
+}
+
+.longhouse-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  min-height: 3rem;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid rgba(85, 57, 29, 0.24);
+  border-radius: 11px;
+  color: #19394a;
+  background: linear-gradient(145deg, rgba(255, 253, 235, 0.98), rgba(244, 225, 174, 0.92));
+  box-shadow: 0 3px 0 rgba(91, 61, 31, 0.15);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+}
+
+.longhouse-link span {
+  color: #b34d42;
+  font-size: 1.15rem;
+}
+
+.longhouse-link:hover {
+  border-color: #b87921;
+  box-shadow: 0 5px 0 rgba(91, 61, 31, 0.18);
+  transform: translateY(-2px);
+}
+
+.longhouse-link:focus-visible {
+  outline: 3px solid color-mix(in srgb, #dba53a 55%, white);
+  outline-offset: 3px;
+}
+
+.longhouse-link.mead-link {
+  border-color: #8f6d00;
+  color: #171300;
+  background: #ffdd00;
+}
+
+.longhouse-link.mead-link span {
+  color: inherit;
+}
+
+.launch-battle-button {
+  min-width: 12.5rem;
+  min-height: 3.1rem;
+  margin-top: -0.85rem;
+  white-space: nowrap;
 }
 
 .ai-pace-control select {
@@ -202,6 +314,17 @@ main {
   color: var(--muted);
   font-size: 0.78rem;
   line-height: 1.35;
+}
+
+.saga-frequency-control select {
+  flex: 0 0 auto;
+  min-width: 9.5rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--ink);
+  background: rgba(255, 253, 245, 0.96);
+  font-weight: 700;
 }
 
 .toggle-switch {
@@ -255,7 +378,7 @@ main {
 
 .player-slot {
   position: relative;
-  min-height: 220px;
+  min-height: 360px;
   padding: 1.5rem;
   border-right: 1px solid var(--line);
   background: linear-gradient(180deg, color-mix(in srgb, var(--faction) 16%, #fffdf1), rgba(255, 253, 241, 0.78));
@@ -266,19 +389,84 @@ main {
 }
 
 .faction-mark {
+  position: absolute;
+  z-index: 1;
+  top: 1.8rem;
+  left: 1.8rem;
   width: 46px;
   height: 46px;
-  margin-bottom: 1.25rem;
   border: 3px solid rgba(255, 255, 255, 0.8);
   border-radius: 50% 50% 45% 55%;
   background: var(--faction);
   box-shadow: 0 0 0 6px color-mix(in srgb, var(--faction) 22%, transparent);
 }
 
-.player-slot h3 {
-  margin: 0 0 0.25rem;
+.commander-portrait {
+  width: 100%;
+  aspect-ratio: 1 / 0.78;
+  margin-bottom: 1rem;
+  border: 2px solid color-mix(in srgb, var(--faction) 52%, #4a3725);
+  border-radius: 12px;
+  background-color: #f5dfae;
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(40, 29, 20, 0.12)), url("/art/faction-commanders-v1.png");
+  background-repeat: no-repeat;
+  background-size: 100% 100%, 200% 200%;
+  box-shadow: inset 0 0 0 4px rgba(255, 250, 229, 0.55), 0 5px 11px rgba(45, 61, 62, 0.15);
+}
+
+.commander-blue { background-position: 0 0, 0 0; }
+.commander-green { background-position: 0 0, 100% 0; }
+.commander-red { background-position: 0 0, 0 100%; }
+.commander-pink { background-position: 0 0, 100% 100%; }
+
+.player-slot .faction-label {
+  min-height: 0;
+  margin: 0 0 0.2rem;
+  color: var(--muted);
   font-family: "Almendra", Georgia, serif;
-  font-size: 1.5rem;
+  font-size: 0.96rem;
+  letter-spacing: 0.035em;
+}
+
+.player-slot .chief-title {
+  min-height: 2.55rem;
+  margin: 0 0 0.8rem;
+  font-family: "Almendra", Georgia, serif;
+  font-size: clamp(1.38rem, 1.7vw, 1.7rem);
+  line-height: 1.06;
+  color: #4d2d18;
+  text-wrap: balance;
+  text-shadow: 0 1px 0 rgba(255, 252, 236, 0.95), 0 3px 7px color-mix(in srgb, var(--faction) 24%, transparent);
+}
+
+.chief-title-name,
+.chief-epithet {
+  display: block;
+}
+
+.chief-title-name {
+  color: color-mix(in srgb, var(--faction) 72%, #4d2d18);
+  font-size: 1.08em;
+  font-weight: 800;
+}
+
+.chief-epithet {
+  margin-top: 0.12rem;
+  color: var(--muted);
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.57em;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  text-shadow: none;
+}
+
+.chief-name {
+  color: color-mix(in srgb, var(--faction) 72%, #59391b);
+  font-size: 1.05em;
+  font-weight: 800;
+  letter-spacing: 0.025em;
 }
 
 .player-slot p {
@@ -323,6 +511,294 @@ main {
   padding: 1rem 1.5rem;
 }
 
+.secondary-button {
+  padding: 0.9rem 1.2rem;
+  border: 1px solid color-mix(in srgb, var(--ink) 24%, transparent);
+  border-radius: 12px;
+  color: var(--ink);
+  background: rgba(255, 253, 241, 0.92);
+  box-shadow: inset 0 -2px 0 rgba(68, 42, 0, 0.12);
+  font-weight: 800;
+}
+
+.map-preview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  margin: 0.9rem 0 0;
+  padding: 1rem 1.2rem;
+  border: 2px solid color-mix(in srgb, var(--gold) 70%, #6d4c18);
+  border-radius: 14px;
+  color: #fff7dd;
+  background: linear-gradient(110deg, #294a55, #426b6f);
+  box-shadow: 0 7px 18px rgba(28, 49, 55, 0.22);
+}
+
+.map-preview[hidden] {
+  display: none;
+}
+
+.map-preview .eyebrow {
+  color: #ffd56e;
+}
+
+.map-preview h2,
+.map-preview p {
+  margin: 0;
+}
+
+.map-preview h2 {
+  font-family: "Almendra", Georgia, serif;
+  font-size: 1.5rem;
+}
+
+.map-preview p:not(.eyebrow) {
+  margin-top: 0.25rem;
+  color: rgba(255, 247, 221, 0.88);
+  line-height: 1.4;
+}
+
+.map-preview-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 0.7rem;
+  align-items: center;
+}
+
+.saga-table {
+  position: relative;
+  display: grid;
+  grid-template-columns: 9rem minmax(12rem, 1fr) 9rem;
+  gap: 1rem;
+  align-items: center;
+  min-height: 8.5rem;
+  padding: 0.8rem 1.2rem;
+  border-top: 2px solid #c7923b;
+  border-bottom: 1px solid rgba(91, 62, 31, 0.28);
+  background:
+    linear-gradient(90deg, rgba(94, 52, 31, 0.96), rgba(133, 79, 40, 0.94), rgba(94, 52, 31, 0.96)),
+    repeating-linear-gradient(90deg, transparent 0 36px, rgba(255, 230, 170, 0.08) 36px 38px);
+  box-shadow: inset 0 8px 18px rgba(39, 20, 10, 0.25), inset 0 -5px 12px rgba(255, 221, 155, 0.08);
+}
+
+.saga-table[hidden] {
+  display: none;
+}
+
+.saga-pile-group {
+  display: grid;
+  justify-items: center;
+  gap: 0.22rem;
+  color: #fff0c6;
+  text-align: center;
+}
+
+.saga-pile-group .eyebrow {
+  margin: 0;
+  color: #ffd56e;
+}
+
+.saga-pile-group small {
+  min-height: 1.6rem;
+  color: rgba(255, 240, 198, 0.82);
+  font-size: 0.72rem;
+  line-height: 1.15;
+}
+
+.saga-pile {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 3.6rem;
+  height: 4.8rem;
+  border: 2px solid #e5b955;
+  border-radius: 7px;
+  color: #f8dd92;
+  background: linear-gradient(145deg, #274c57, #17313a);
+  transition: opacity 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+}
+
+.saga-card-back {
+  display: grid;
+  place-items: center;
+  width: 72%;
+  height: 78%;
+  border: 1px solid rgba(248, 221, 146, 0.7);
+  border-radius: 50%;
+  font-family: Georgia, serif;
+  font-size: 1.8rem;
+}
+
+.saga-pile.pile-high {
+  box-shadow: 3px 3px 0 #d7a33f, 6px 6px 0 #2b5962, 9px 9px 0 #c18b31, 12px 12px 12px rgba(20, 10, 5, 0.42);
+}
+
+.saga-pile.pile-mid {
+  box-shadow: 3px 3px 0 #d7a33f, 6px 6px 0 #2b5962, 8px 8px 10px rgba(20, 10, 5, 0.38);
+}
+
+.saga-pile.pile-low {
+  box-shadow: 3px 3px 0 #d7a33f, 5px 5px 8px rgba(20, 10, 5, 0.35);
+}
+
+.saga-pile.pile-empty {
+  border-style: dashed;
+  opacity: 0.3;
+  box-shadow: none;
+}
+
+.saga-discard-pile {
+  color: #48311f;
+  background: linear-gradient(145deg, #fff6d9, #e7c87b);
+  transform: rotate(2deg);
+}
+
+.saga-current-slot {
+  display: flex;
+  gap: 0.85rem;
+  align-items: center;
+  justify-content: center;
+  min-height: 5.5rem;
+  padding: 0.7rem 1rem;
+  border: 2px dashed rgba(255, 223, 144, 0.58);
+  border-radius: 13px;
+  color: #fff3cf;
+  text-align: left;
+  background: rgba(33, 54, 58, 0.42);
+}
+
+.saga-current-slot > span {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 3.1rem;
+  height: 3.8rem;
+  border: 2px solid var(--event-color, #e5b955);
+  border-radius: 7px;
+  color: var(--event-color, #ffd56e);
+  background: rgba(16, 41, 48, 0.9);
+  font-family: Georgia, serif;
+  font-size: 1.65rem;
+}
+
+.saga-current-slot .eyebrow {
+  margin: 0 0 0.15rem;
+  color: #ffd56e;
+}
+
+.saga-current-slot strong {
+  display: block;
+  font-family: "Almendra", Georgia, serif;
+  font-size: 1.15rem;
+}
+
+.saga-current-slot small {
+  display: block;
+  margin-top: 0.12rem;
+  color: rgba(255, 240, 198, 0.88);
+  font-size: 0.72rem;
+  line-height: 1.25;
+}
+
+.saga-current-slot .saga-current-detail {
+  color: rgba(255, 248, 224, 0.72);
+}
+
+.saga-table.is-reshuffling .saga-current-slot {
+  animation: saga-reshuffle-message 700ms ease-in-out infinite alternate;
+}
+
+.event-card.is-awaiting-draw,
+.event-card.is-discarding {
+  visibility: hidden;
+}
+
+.saga-flying-card {
+  position: fixed;
+  z-index: 80;
+  box-sizing: border-box;
+  margin: 0;
+  pointer-events: none;
+  transform-origin: center;
+  contain: layout paint style;
+  backface-visibility: hidden;
+  transform: translateZ(0);
+  will-change: transform, opacity;
+}
+
+.saga-flight-back {
+  display: grid;
+  place-items: center;
+  border: 4px solid #e5b955;
+  border-radius: 9px;
+  color: #f8dd92;
+  background: linear-gradient(145deg, #2e5e68, #17313a);
+  box-shadow: 0 18px 38px rgba(9, 22, 27, 0.5);
+  font-family: Georgia, serif;
+  font-size: 2rem;
+  font-weight: 800;
+}
+
+.saga-flight-face {
+  overflow: hidden;
+  box-shadow: 0 18px 38px rgba(9, 22, 27, 0.5);
+}
+
+@keyframes saga-reshuffle-message {
+  from { border-color: rgba(255, 223, 144, 0.4); transform: scale(0.99); }
+  to { border-color: #ffd56e; transform: scale(1.015); }
+}
+
+.human-turn-announcement {
+  position: absolute;
+  z-index: 12;
+  inset: 4.2rem 0 0;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  color: #fff8df;
+  text-align: center;
+  background: rgba(17, 48, 58, 0.53);
+  backdrop-filter: blur(2px);
+}
+
+.human-turn-announcement[hidden] {
+  display: none;
+}
+
+.human-turn-announcement > div {
+  width: min(88%, 31rem);
+  padding: 1.35rem 1.6rem;
+  border: 3px solid var(--turn-color, var(--gold));
+  border-radius: 18px;
+  background: linear-gradient(145deg, rgba(37, 70, 76, 0.97), rgba(21, 47, 55, 0.97));
+  box-shadow: 0 18px 45px rgba(9, 26, 31, 0.46);
+  animation: human-turn-announcement 180ms ease-out;
+}
+
+.human-turn-announcement .eyebrow {
+  margin: 0;
+  color: var(--turn-color, #ffd56e);
+}
+
+.human-turn-announcement h2 {
+  margin: 0.2rem 0 0.45rem;
+  color: #fff8df;
+  font-family: "Almendra", Georgia, serif;
+  font-size: clamp(1.7rem, 5vw, 2.7rem);
+}
+
+.human-turn-announcement p:last-child {
+  margin: 0;
+  color: rgba(255, 248, 223, 0.9);
+}
+
+@keyframes human-turn-announcement {
+  from { opacity: 0; transform: translateY(10px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
 .game-shell {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 310px;
@@ -339,6 +815,12 @@ main {
   padding: 1.5rem;
   background: rgba(19, 45, 55, 0.62);
   backdrop-filter: blur(4px);
+}
+
+.event-reveal.is-card-in-motion {
+  /* A live backdrop blur is expensive while a large card crosses the screen.
+     Keep the dimming, then restore the soft blur once the card comes to rest. */
+  backdrop-filter: none;
 }
 
 .event-reveal[hidden] {
@@ -416,6 +898,7 @@ main {
 }
 
 .board-column {
+  position: relative;
   overflow: hidden;
 }
 
@@ -454,6 +937,70 @@ main {
   display: block;
   width: 100%;
   height: 100%;
+}
+
+.horn-ceremony {
+  position: absolute;
+  z-index: 6;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 2rem;
+  color: #fff5cf;
+  text-align: center;
+  background:
+    radial-gradient(circle at 50% 47%, rgba(177, 117, 39, 0.28), transparent 34%),
+    linear-gradient(155deg, rgba(9, 35, 49, 0.98), rgba(24, 70, 80, 0.98));
+  transition: opacity 1s ease-in;
+}
+
+.horn-ceremony[hidden] {
+  display: none;
+}
+
+.horn-ceremony.is-fading {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.horn-ceremony > div {
+  max-width: 28rem;
+  animation: horn-ceremony-arrives 260ms ease-out;
+}
+
+.horn-ceremony .eyebrow {
+  color: #e5ae40;
+}
+
+.horn-ceremony-icon {
+  width: clamp(11rem, 28vw, 15rem);
+  margin: 0.25rem auto 0.55rem;
+  filter: drop-shadow(0 5px 0 rgba(0, 0, 0, 0.2));
+}
+
+.horn-ceremony-icon svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.horn-ceremony h2 {
+  margin: 0;
+  color: #fff8da;
+  font-family: "Almendra", Georgia, serif;
+  font-size: clamp(2rem, 5vw, 3.25rem);
+}
+
+.horn-ceremony p:not(.eyebrow):not(.horn-ceremony-icon) {
+  margin: 0.7rem 0 0;
+  color: rgba(255, 245, 207, 0.88);
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+@keyframes horn-ceremony-arrives {
+  from { opacity: 0; transform: translateY(10px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .board-help {
@@ -599,6 +1146,58 @@ main {
   background: #2b8091;
 }
 
+.boat-passengers {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.7rem;
+}
+
+.boat-passengers[hidden] {
+  display: none;
+}
+
+.passenger-button {
+  display: grid;
+  grid-template-columns: 1.6rem 1fr;
+  gap: 0.55rem;
+  align-items: center;
+  width: 100%;
+  padding: 0.58rem 0.65rem;
+  border: 1px solid #66a8b2;
+  border-radius: 9px;
+  color: var(--ink);
+  background: #edfafa;
+  text-align: left;
+}
+
+.passenger-button:hover:not(:disabled),
+.passenger-button.is-selected {
+  border-color: var(--gold);
+  background: #fff4c8;
+}
+
+.passenger-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.passenger-button strong,
+.passenger-button small {
+  display: block;
+}
+
+.passenger-button small {
+  margin-top: 0.1rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.passenger-icon {
+  color: var(--gold-dark);
+  font-size: 1.15rem;
+  text-align: center;
+}
+
 .end-turn-button {
   width: calc(100% - 2rem);
   margin: 0 1rem 1rem;
@@ -637,6 +1236,359 @@ main {
   color: #19394a;
 }
 
+.report-button {
+  width: calc(100% - 2rem);
+  margin: 0.8rem 1rem 0;
+}
+
+.battle-report {
+  position: fixed;
+  z-index: 30;
+  inset: 0;
+  overflow-y: auto;
+  padding: 2rem;
+  color: var(--ink);
+  background: rgba(10, 35, 43, 0.78);
+  backdrop-filter: blur(6px);
+}
+
+.battle-report[hidden] {
+  display: none;
+}
+
+.battle-report-card {
+  width: min(100%, 980px);
+  margin: 0 auto;
+  padding: clamp(1.25rem, 4vw, 2.4rem);
+  border: 4px solid #dba53a;
+  border-radius: 24px;
+  background:
+    linear-gradient(145deg, rgba(255, 253, 235, 0.99), rgba(242, 222, 168, 0.99)),
+    repeating-linear-gradient(45deg, rgba(106, 72, 35, 0.06) 0 2px, transparent 2px 8px);
+  box-shadow: 0 28px 80px rgba(4, 20, 25, 0.58);
+  animation: battle-report-arrives 260ms ease-out;
+}
+
+.battle-report-header {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  padding-bottom: 1.2rem;
+  border-bottom: 2px solid rgba(93, 61, 29, 0.18);
+}
+
+.battle-report-header h2,
+.battle-report-header p {
+  margin: 0;
+}
+
+.battle-report-header h2 {
+  font-family: "Almendra", Georgia, serif;
+  font-size: clamp(2rem, 5vw, 3.3rem);
+  line-height: 1;
+}
+
+.battle-report-header p:not(.eyebrow) {
+  margin-top: 0.5rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.battle-report-seal {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 5rem;
+  height: 5rem;
+  border: 3px solid #6e4420;
+  border-radius: 50%;
+  color: #fff4c9;
+  background: #b34d42;
+  box-shadow: inset 0 0 0 7px rgba(255, 223, 112, 0.36);
+  font-size: 2.4rem;
+}
+
+.battle-report-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 1.3rem 0;
+}
+
+.battle-stat {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid rgba(79, 56, 34, 0.16);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.battle-stat span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.battle-stat strong {
+  color: #19394a;
+  font-size: 1.5rem;
+}
+
+.battle-stat small {
+  color: var(--muted);
+  line-height: 1.3;
+}
+
+.battle-report-table-wrap {
+  overflow-x: auto;
+  border: 1px solid rgba(79, 56, 34, 0.18);
+  border-radius: 12px;
+}
+
+.battle-report-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: rgba(255, 255, 255, 0.46);
+  font-size: 0.9rem;
+}
+
+.battle-report-table th,
+.battle-report-table td {
+  padding: 0.75rem;
+  border-bottom: 1px solid rgba(79, 56, 34, 0.12);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.battle-report-table thead th {
+  color: #fff7dd;
+  background: #294a55;
+  font-size: 0.76rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.battle-report-table tbody tr:last-child th,
+.battle-report-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.report-faction-mark {
+  display: inline-block;
+  width: 0.75rem;
+  height: 0.75rem;
+  margin-right: 0.45rem;
+  border: 1px solid rgba(25, 57, 74, 0.5);
+  border-radius: 50%;
+  background: var(--report-faction);
+  vertical-align: -0.05rem;
+}
+
+.battle-report-awards {
+  margin-top: 1.4rem;
+}
+
+.battle-report-awards h3 {
+  margin: 0 0 0.7rem;
+  font-family: "Almendra", Georgia, serif;
+  font-size: 1.45rem;
+}
+
+.battle-report-award-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.battle-report-award-list article {
+  padding: 0.8rem 0.9rem;
+  border-left: 5px solid #dba53a;
+  border-radius: 6px 10px 10px 6px;
+  background: rgba(255, 250, 226, 0.76);
+}
+
+.battle-report-award-list p {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.4;
+}
+
+.battle-report-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+
+.longhouse-modal {
+  z-index: 40;
+}
+
+.longhouse-card {
+  width: min(100%, 1040px);
+}
+
+.longhouse-seal {
+  background: #294a55;
+}
+
+.longhouse-page {
+  margin-top: 1.35rem;
+}
+
+.instruction-intro,
+.feedback-intro,
+.acknowledgement-panel {
+  padding: 1rem 1.1rem;
+  border-left: 5px solid #dba53a;
+  border-radius: 7px 13px 13px 7px;
+  background: rgba(255, 250, 226, 0.7);
+}
+
+.instruction-intro h3,
+.instruction-intro p,
+.feedback-intro h3,
+.feedback-intro p,
+.acknowledgement-panel h3,
+.acknowledgement-panel p {
+  margin: 0;
+}
+
+.instruction-intro h3,
+.feedback-intro h3,
+.acknowledgement-panel h3,
+.instruction-grid h3 {
+  font-family: "Almendra", Georgia, serif;
+  font-size: 1.35rem;
+}
+
+.instruction-intro p,
+.feedback-intro p,
+.acknowledgement-panel p {
+  margin-top: 0.45rem;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.instruction-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.85rem;
+}
+
+.instruction-grid article {
+  padding: 1rem;
+  border: 1px solid rgba(79, 56, 34, 0.16);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.instruction-grid h3 {
+  margin: 0 0 0.55rem;
+  color: #19394a;
+}
+
+.instruction-grid p {
+  margin: 0.4rem 0 0;
+  color: #40575d;
+  font-size: 0.91rem;
+  line-height: 1.5;
+}
+
+.acknowledgements-page {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.acknowledgements-page[hidden],
+.longhouse-page[hidden] {
+  display: none;
+}
+
+.merry-makers-panel {
+  border-left-color: #b34d42;
+}
+
+.feedback-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+  margin-top: 1rem;
+}
+
+.feedback-form label {
+  display: grid;
+  gap: 0.4rem;
+  color: #19394a;
+  font-weight: 800;
+}
+
+.feedback-form label span {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.feedback-form label:has(textarea),
+.feedback-send-row {
+  grid-column: 1 / -1;
+}
+
+.feedback-form input,
+.feedback-form select,
+.feedback-form textarea {
+  width: 100%;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid rgba(79, 56, 34, 0.28);
+  border-radius: 10px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.78);
+  font: inherit;
+}
+
+.feedback-form textarea {
+  min-height: 10rem;
+  resize: vertical;
+}
+
+.feedback-form input:focus,
+.feedback-form select:focus,
+.feedback-form textarea:focus {
+  border-color: #b87921;
+  outline: 3px solid rgba(219, 165, 58, 0.24);
+}
+
+.feedback-send-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-top: 0.25rem;
+}
+
+.feedback-send-row p {
+  max-width: 42rem;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.feedback-send-row .primary-button {
+  flex: 0 0 auto;
+}
+
+@keyframes battle-report-arrives {
+  from { opacity: 0; transform: translateY(14px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
 @media (max-width: 1080px) {
   .game-shell {
     grid-template-columns: 1fr;
@@ -649,6 +1601,7 @@ main {
 
   .chief-card,
   .log-section,
+  .report-button,
   .text-button {
     grid-column: 1 / -1;
   }
@@ -675,6 +1628,11 @@ main {
     grid-template-columns: 1fr;
   }
 
+  .longhouse-links {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 1rem;
+  }
+
   .player-slot:nth-child(2) {
     border-right: 0;
   }
@@ -688,12 +1646,100 @@ main {
     flex-direction: column;
   }
 
+  .setup-launch-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .ai-pace-control {
+    width: 100%;
+  }
+
+  .launch-battle-button {
+    width: 100%;
+    margin-top: 0;
+  }
+
   .primary-button {
     width: 100%;
   }
 
+  .map-preview,
+  .map-preview-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .map-preview-actions .secondary-button,
+  .map-preview-actions .primary-button {
+    width: 100%;
+  }
+
+  .saga-table {
+    grid-template-columns: 5.5rem minmax(8rem, 1fr) 5.5rem;
+    gap: 0.55rem;
+    padding: 0.7rem 0.55rem;
+  }
+
+  .saga-pile-group small {
+    display: none;
+  }
+
+  .saga-current-slot {
+    gap: 0.5rem;
+    padding: 0.55rem;
+  }
+
+  .saga-current-slot > span {
+    width: 2.5rem;
+    height: 3.2rem;
+  }
+
   .command-panel {
     display: block;
+  }
+
+  .battle-report {
+    padding: 0.75rem;
+  }
+
+  .battle-report-summary,
+  .battle-report-award-list {
+    grid-template-columns: 1fr;
+  }
+
+  .battle-report-header {
+    align-items: flex-start;
+  }
+
+  .battle-report-actions {
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
+
+  .battle-report-actions button {
+    width: 100%;
+  }
+
+  .instruction-grid,
+  .acknowledgements-page,
+  .feedback-form {
+    grid-template-columns: 1fr;
+  }
+
+  .feedback-send-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .feedback-send-row .primary-button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 460px) {
+  .longhouse-links {
+    grid-template-columns: 1fr;
   }
 }
 
