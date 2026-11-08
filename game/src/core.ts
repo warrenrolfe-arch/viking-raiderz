@@ -1903,6 +1903,25 @@ export function moveUnit(state: GameState, unitId: string, destination: Position
     state.log.unshift(`${capitalize(unit.playerId)} embarks a Viking (${longboatPassengers(state, defender.id).length}/3 aboard).`);
     return true;
   }
+  const convertingDrunkDefender = Boolean(
+    unit.type === "soldier" &&
+    defender?.type === "soldier" &&
+    defender.drunk &&
+    defender.playerId !== unit.playerId,
+  );
+  if (convertingDrunkDefender && defender) {
+    // The attacker cannot share the converted Viking's square. A long
+    // approach therefore ends on the last clear square beside the defender,
+    // exactly as a castle charge ends beside the walls.
+    unit.position = {
+      x: destination.x - Math.sign(destination.x - unit.position.x),
+      y: destination.y - Math.sign(destination.y - unit.position.y),
+    };
+    resolveCombat(state, unit, defender);
+    unit.moved = true;
+    bankTreasureAtHome(state, unit);
+    return true;
+  }
   if (defender && !resolveCombat(state, unit, defender)) {
     unit.moved = true;
     return true;

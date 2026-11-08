@@ -573,16 +573,31 @@ describe("game rules", () => {
     expect(redSoldier.position).toEqual({ x: 15, y: 10 });
     expect(redSoldier.drunk).toBe(false);
     expect(blueSoldier.moved).toBe(true);
-    expect(blueSoldier.position).toEqual({ x: 10, y: 10 });
+    expect(blueSoldier.position).toEqual({ x: 14, y: 10 });
     expect(conversionPresentation.arrival).toBe("converted");
     expect(conversionPresentation.drunkConversion).toMatchObject({
       attacker: { id: blueSoldier.id, position: { x: 10, y: 10 } },
+      attackPosition: { x: 14, y: 10 },
       defenderBefore: { id: redSoldier.id, playerId: "red", drunk: true, position: { x: 15, y: 10 } },
       defenderAfter: { id: redSoldier.id, playerId: "blue", drunk: false, position: { x: 15, y: 10 } },
     });
 
+    const adjacentState = createGame(setups);
+    const adjacentAttacker = adjacentState.units.find((unit) => unit.playerId === "blue" && unit.type === "soldier")!;
+    const adjacentDefender = adjacentState.units.find((unit) => unit.playerId === "red" && unit.type === "soldier")!;
+    adjacentAttacker.position = { x: 10, y: 10 };
+    adjacentDefender.position = { x: 11, y: 10 };
+    adjacentDefender.drunk = true;
+    adjacentState.units = [adjacentAttacker, adjacentDefender];
+    for (let x = 10; x <= 11; x += 1) adjacentState.terrain[10 * adjacentState.width + x] = "land";
+    expect(moveUnit(adjacentState, adjacentAttacker.id, adjacentDefender.position)).toBe(true);
+    expect(adjacentAttacker.position).toEqual({ x: 10, y: 10 });
+    expect(adjacentDefender.playerId).toBe("blue");
+    expect(adjacentDefender.drunk).toBe(false);
+
     blueSoldier.moved = false;
     blueSoldier.drunk = true;
+    blueSoldier.position = { x: 10, y: 10 };
     const catapult = testCatapult(state, "red");
     catapult.position = { x: 11, y: 10 };
     state.units = [blueSoldier, catapult];

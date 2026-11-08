@@ -1416,14 +1416,18 @@ class BoardScene extends Phaser.Scene {
     conversion: NonNullable<MovementPresentation["drunkConversion"]> & { progress: number },
   ): void {
     const progress = conversion.progress;
-    const dx = Math.sign(conversion.defenderBefore.position.x - conversion.attacker.position.x);
-    const dy = Math.sign(conversion.defenderBefore.position.y - conversion.attacker.position.y);
-    // The attacker spends the action but does not occupy the defender's
-    // square. A small lunge conveys the scuffle without inventing a move.
-    const lunge = Math.sin(progress * Math.PI) * 0.1;
+    const travelEnd = 0.62;
+    const travelProgress = Math.min(1, progress / travelEnd);
+    const easedTravel = travelProgress * travelProgress * (3 - 2 * travelProgress);
+    const scuffleProgress = Math.max(0, (progress - travelEnd) / (1 - travelEnd));
+    const dx = Math.sign(conversion.defenderBefore.position.x - conversion.attackPosition.x);
+    const dy = Math.sign(conversion.defenderBefore.position.y - conversion.attackPosition.y);
+    // Travel to the final clear square first, then make a short local lunge.
+    // Neither Viking ever occupies the other's square.
+    const lunge = Math.sin(scuffleProgress * Math.PI) * 0.1;
     const attackerPosition = {
-      x: conversion.attacker.position.x + dx * lunge,
-      y: conversion.attacker.position.y + dy * lunge,
+      x: Phaser.Math.Linear(conversion.attacker.position.x, conversion.attackPosition.x, easedTravel) + dx * lunge,
+      y: Phaser.Math.Linear(conversion.attacker.position.y, conversion.attackPosition.y, easedTravel) + dy * lunge,
     };
     const defender = progress < 1 ? conversion.defenderBefore : conversion.defenderAfter;
     this.drawUnit(graphics, { ...conversion.attacker, position: attackerPosition, moved: false });
@@ -1431,7 +1435,7 @@ class BoardScene extends Phaser.Scene {
 
     const toX = (conversion.defenderBefore.position.x + 0.5) * this.tileSize;
     const toY = (conversion.defenderBefore.position.y + 0.5) * this.tileSize;
-    const pulse = Math.max(0, Math.sin(progress * Math.PI));
+    const pulse = Math.max(0, Math.sin(scuffleProgress * Math.PI));
     // Keep the conversion feedback local to the defender. The previous
     // centre-to-centre connector could span most of the board when a Viking
     // reached a distant drunk opponent, looking like a stray rendering line.

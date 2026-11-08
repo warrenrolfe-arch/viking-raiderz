@@ -23,9 +23,10 @@ export interface MovementPresentation {
     defender: Unit;
     attackerWon: boolean;
   };
-  /** A drunk defender changes allegiance while both units remain on their real squares. */
+  /** A drunk defender changes allegiance after the attacker approaches an adjacent square. */
   drunkConversion?: {
     attacker: Unit;
+    attackPosition: Position;
     defenderBefore: Unit;
     defenderAfter: Unit;
   };
@@ -198,6 +199,7 @@ export function completeMovementPresentation(
     drunkConversion: convertedDrunk && target
       ? {
           attacker: context.unit,
+          attackPosition: mover ? { ...mover.position } : { ...context.from },
           defenderBefore: context.targetUnit!,
           defenderAfter: { ...target, position: { ...target.position } },
         }
