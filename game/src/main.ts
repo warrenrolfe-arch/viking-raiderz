@@ -4193,8 +4193,14 @@ for (const button of purchaseButtons) {
 buildSetup();
 validateSetups();
 
-// Browser autoplay rules require a user gesture. Any ordinary setup
-// interaction can begin the quiet loop; startGame stops it before the board
+// Ask for the quiet title loop as soon as the War Council appears. Browsers
+// may refuse unmuted autoplay for a first-time visitor; the ordinary setup
+// interactions below retry it in that case. Browsers that have granted audio
+// permission (or recognise a returning visitor) can begin it immediately.
+if (!setup.hidden && musicToggle.checked) startMenuMusic();
+
+// Browser autoplay rules can require a user gesture. Any ordinary setup
+// interaction retries the quiet loop; startGame stops it before the board
 // preview or match appears.
 setup.addEventListener("click", () => {
   if (!setup.hidden && musicToggle.checked) startMenuMusic();
