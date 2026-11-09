@@ -173,6 +173,17 @@ main {
   line-height: 1.6;
 }
 
+.setup-copy .browser-notice {
+  max-width: 68ch;
+  margin-top: 0.85rem;
+  padding: 0.65rem 0.85rem;
+  border-left: 4px solid #2f8ea4;
+  border-radius: 0 9px 9px 0;
+  color: #294a55;
+  background: rgba(224, 246, 250, 0.72);
+  font-size: 0.9rem;
+}
+
 .player-slots {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
