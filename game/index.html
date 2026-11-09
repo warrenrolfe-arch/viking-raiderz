@@ -13,7 +13,6 @@
     <div id="app">
       <header class="masthead">
         <div>
-          <p class="eyebrow">Playable rules prototype</p>
           <h1>Viking Raiderz <span>The Saga Continues</span></h1>
         </div>
         <p class="tagline">Raise a crew. Cross the fjord. Borrow a castle.</p>
@@ -78,6 +77,10 @@
             <button class="longhouse-link" type="button" data-longhouse-page="feedback">
               <span aria-hidden="true">✉</span>
               Feedback Form
+            </button>
+            <button class="longhouse-link" type="button" data-longhouse-page="privacy">
+              <span aria-hidden="true">ᚱ</span>
+              Privacy Notice
             </button>
           </nav>
           <div class="setup-toggles" aria-label="Match options">
@@ -471,6 +474,7 @@
                   Spotted a bug? Found a clever tactic? Dreamed up a Saga Card involving a suspicious herring?
                   Your feedback can help make the next raid better.
                 </p>
+                <p class="feedback-privacy-note">By sending feedback, you agree that it will be delivered to the game owner through Web3Forms. Read the <button class="inline-text-button" type="button" data-longhouse-page="privacy">Privacy Notice</button>.</p>
               </div>
               <form id="feedback-form" class="feedback-form">
                 <label>
@@ -506,6 +510,27 @@
                   <button id="feedback-submit" class="primary-button" type="submit">Send raven-mail</button>
                 </div>
               </form>
+            </section>
+
+            <section class="longhouse-page privacy-page" data-longhouse-content="privacy" hidden>
+              <article class="acknowledgement-panel privacy-panel">
+                <h3>Privacy Notice</h3>
+                <p><strong>Last updated: 9 November 2026.</strong> Viking Raiderz is a small independent game. It does not require an account, collect in-game profiles, use advertising cookies, or run visitor analytics.</p>
+              </article>
+              <article class="acknowledgement-panel privacy-panel">
+                <h3>Feedback you choose to send</h3>
+                <p>The Feedback Form collects the category and message you enter, plus an optional name and reply email address. This information is used only to read your feedback, investigate bugs, consider ideas, and reply when you have supplied an address.</p>
+                <p>Feedback is processed by <a href="https://web3forms.com/privacy" target="_blank" rel="noreferrer">Web3Forms</a> and delivered to the game owner’s private Google inbox. Cloudflare hosts this website. These providers may process technical information needed to operate their services, such as IP addresses and browser details.</p>
+              </article>
+              <article class="acknowledgement-panel privacy-panel">
+                <h3>How long it is kept</h3>
+                <p>Feedback is kept only for as long as it is reasonably useful for replying, improving the game, or resolving an issue. You can ask for your message to be deleted at any time.</p>
+              </article>
+              <article class="acknowledgement-panel privacy-panel">
+                <h3>Your choices</h3>
+                <p>You can request access to, correction of, or deletion of feedback you have sent. Contact <a href="mailto:hello@vikingraiderz.co.uk">hello@vikingraiderz.co.uk</a> and include enough detail for the message to be found.</p>
+                <p>The optional Buy me a Mead link opens an external service. Its own privacy policy applies once you choose to use it.</p>
+              </article>
             </section>
 
             <div class="battle-report-actions">

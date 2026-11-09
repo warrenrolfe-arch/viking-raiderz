@@ -169,7 +169,7 @@ const purchaseButtons = Array.from(document.querySelectorAll<HTMLButtonElement>(
 const longhouseOpenButtons = Array.from(document.querySelectorAll<HTMLButtonElement>("[data-longhouse-page]"));
 const longhousePages = Array.from(document.querySelectorAll<HTMLElement>("[data-longhouse-content]"));
 
-type LonghousePage = "instructions" | "acknowledgements" | "feedback";
+type LonghousePage = "instructions" | "acknowledgements" | "feedback" | "privacy";
 const WEB3FORMS_ACCESS_KEY = "f8b0ab63-dde7-4ba9-a38c-b6d7ac963948";
 
 const LONGHOUSE_PAGE_COPY: Record<LonghousePage, { title: string; subtitle: string; eyebrow: string; seal: string }> = {
@@ -190,6 +190,12 @@ const LONGHOUSE_PAGE_COPY: Record<LonghousePage, { title: string; subtitle: stri
     subtitle: "Reports of bugs, battles and brilliant Saga Cards are welcome.",
     eyebrow: "The raven is taking notes",
     seal: "✉",
+  },
+  privacy: {
+    title: "Privacy Notice",
+    subtitle: "The short version: no ads, no accounts, no skulduggery.",
+    eyebrow: "A promise from the longhouse",
+    seal: "ᚱ",
   },
 };
 
