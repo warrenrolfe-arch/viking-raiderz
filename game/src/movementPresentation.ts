@@ -1,7 +1,7 @@
 import { carriedTreasure, playerAtCastle, positionKey, unitAt, unitFootprint } from "./core";
 import type { DrinkingHorn, GameState, PlayerId, Position, Unit } from "./types";
 
-export type ArrivalKind = "battle-won" | "ship-sunk" | "sturdy-longboat" | "repelled" | "converted" | "castle" | "treasure" | "deposit" | "boarding" | "drinking";
+export type ArrivalKind = "battle-won" | "ship-sunk" | "sturdy-longboat" | "repelled" | "converted" | "castle" | "treasure" | "deposit" | "boarding" | "disembarking" | "drinking";
 
 /** Castle attacks always hold their outcome for this fixed suspense period. */
 export const CASTLE_ASSAULT_DURATION_MS = 3_000;

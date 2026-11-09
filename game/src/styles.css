@@ -807,12 +807,12 @@ main {
 }
 
 .event-reveal {
-  position: fixed;
+  position: absolute;
   z-index: 20;
-  inset: 0;
   display: grid;
   place-items: center;
   padding: 1.5rem;
+  box-sizing: border-box;
   background: rgba(19, 45, 55, 0.62);
   backdrop-filter: blur(4px);
 }
@@ -912,6 +912,12 @@ main {
 
 .board-toolbar p {
   margin-bottom: 0;
+}
+
+.board-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
 }
 
 .round-label {
@@ -1626,6 +1632,15 @@ main {
 
   .setup-toggles {
     grid-template-columns: 1fr;
+  }
+
+  .board-toolbar {
+    align-items: flex-start;
+  }
+
+  .board-toolbar-actions {
+    align-items: flex-end;
+    flex-direction: column;
   }
 
   .longhouse-links {

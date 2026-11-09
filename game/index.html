@@ -151,13 +151,15 @@
         </section>
 
         <section id="game-shell" class="game-shell" aria-label="Game board" hidden>
-          <div class="board-column">
+          <div id="board-column" class="board-column">
             <div class="board-toolbar">
               <div>
                 <p class="eyebrow">The fjord</p>
                 <p id="round-label" class="round-label">Round 1</p>
               </div>
-              <div id="turn-badge" class="turn-badge">Blue turn</div>
+              <div class="board-toolbar-actions">
+                <div id="turn-badge" class="turn-badge">Blue turn</div>
+              </div>
             </div>
             <div id="game-canvas" class="game-canvas" aria-label="Interactive battlefield"></div>
             <section id="horn-ceremony" class="horn-ceremony" aria-live="polite" hidden>
@@ -166,25 +168,45 @@
                 <div class="horn-ceremony-icon" aria-hidden="true">
                   <svg viewBox="0 0 280 150" focusable="false">
                     <defs>
-                      <linearGradient id="war-horn-ivory" x1="0" x2="1" y1="0.2" y2="0.85">
-                        <stop offset="0" stop-color="#fff0bb" />
-                        <stop offset="0.48" stop-color="#d9a75a" />
-                        <stop offset="1" stop-color="#8c4b20" />
+                      <linearGradient id="war-horn-horn" x1="0.12" x2="0.92" y1="0.14" y2="0.84">
+                        <stop offset="0" stop-color="#fff6d1" />
+                        <stop offset="0.32" stop-color="#d8b16c" />
+                        <stop offset="0.58" stop-color="#8d552d" />
+                        <stop offset="0.8" stop-color="#e4c27e" />
+                        <stop offset="1" stop-color="#6d3e25" />
                       </linearGradient>
-                      <linearGradient id="war-horn-metal" x1="0" x2="1">
-                        <stop offset="0" stop-color="#f7db7b" />
-                        <stop offset="0.5" stop-color="#b66a25" />
-                        <stop offset="1" stop-color="#ffdc70" />
+                      <linearGradient id="war-horn-silver" x1="0" x2="1" y1="0" y2="1">
+                        <stop offset="0" stop-color="#f7ead2" />
+                        <stop offset="0.35" stop-color="#b79a72" />
+                        <stop offset="0.68" stop-color="#5a4434" />
+                        <stop offset="1" stop-color="#dcc39a" />
+                      </linearGradient>
+                      <linearGradient id="war-horn-gold" x1="0" x2="1">
+                        <stop offset="0" stop-color="#ffe9a1" />
+                        <stop offset="0.5" stop-color="#ae7132" />
+                        <stop offset="1" stop-color="#f4c866" />
                       </linearGradient>
                     </defs>
-                    <path d="M28 29 C98 19 131 37 158 69 C180 95 211 104 248 87 L261 111 C208 140 161 129 128 94 C100 64 73 54 38 59 Z" fill="url(#war-horn-ivory)" stroke="#562d1a" stroke-width="7" stroke-linejoin="round" />
-                    <path d="M47 29 L62 57" stroke="url(#war-horn-metal)" stroke-width="15" />
-                    <path d="M94 38 L110 70" stroke="url(#war-horn-metal)" stroke-width="13" />
-                    <path d="M143 72 L159 101" stroke="url(#war-horn-metal)" stroke-width="12" />
-                    <ellipse cx="252" cy="99" rx="20" ry="25" transform="rotate(-27 252 99)" fill="#412016" stroke="#f0c45d" stroke-width="7" />
-                    <path d="M20 27 L43 59" stroke="#f5dc83" stroke-width="12" stroke-linecap="round" />
-                    <path d="M31 22 L54 55" stroke="#6d3920" stroke-width="5" stroke-linecap="round" />
-                    <path d="M72 86 C91 105 107 116 125 122" fill="none" stroke="#f9dda0" stroke-width="6" stroke-linecap="round" opacity="0.8" />
+                    <!-- Braided carrying cord, inspired by a decorated Norse drinking horn. -->
+                    <path d="M72 31 C110 1 130 8 126 34 C123 52 102 52 108 69 C113 84 143 78 147 57 C151 35 130 25 133 12" fill="none" stroke="#171516" stroke-width="8" stroke-linecap="round" />
+                    <path d="M72 31 C110 1 130 8 126 34 C123 52 102 52 108 69 C113 84 143 78 147 57 C151 35 130 25 133 12" fill="none" stroke="#64564a" stroke-width="2" stroke-dasharray="2 5" stroke-linecap="round" />
+                    <path d="M88 53 C143 66 183 47 217 69 C241 84 239 112 220 119 C198 126 187 105 197 92" fill="none" stroke="#171516" stroke-width="8" stroke-linecap="round" />
+                    <path d="M88 53 C143 66 183 47 217 69 C241 84 239 112 220 119 C198 126 187 105 197 92" fill="none" stroke="#64564a" stroke-width="2" stroke-dasharray="2 5" stroke-linecap="round" />
+
+                    <!-- Broad engraved mouthpiece and sweeping horn body. -->
+                    <path d="M27 27 L78 25 L84 66 C87 93 108 112 139 116 C171 120 207 111 239 91 L252 108 C220 136 175 146 133 140 C81 132 54 105 50 70 Z" fill="url(#war-horn-horn)" stroke="#3f2a20" stroke-width="5" stroke-linejoin="round" />
+                    <path d="M24 23 Q51 16 80 23 L79 39 Q51 34 26 39 Z" fill="url(#war-horn-silver)" stroke="#3f2a20" stroke-width="4" />
+                    <path d="M27 42 Q52 36 80 42 L81 54 Q54 49 29 54 Z" fill="url(#war-horn-gold)" stroke="#493326" stroke-width="3" />
+                    <path d="M29 29 Q52 20 76 29 M30 47 Q52 39 78 47" fill="none" stroke="#f6d47b" stroke-width="2" stroke-dasharray="2 3" />
+                    <path d="M39 25 C46 34 54 18 61 28 C67 38 72 22 78 30" fill="none" stroke="#3e332d" stroke-width="2" />
+
+                    <!-- Metal collar and knotwork-style decoration. -->
+                    <path d="M75 58 Q80 65 84 68 L91 83 Q85 81 78 78 Z" fill="url(#war-horn-silver)" stroke="#463126" stroke-width="3" />
+                    <path d="M84 71 Q94 79 99 91" fill="none" stroke="url(#war-horn-gold)" stroke-width="7" />
+                    <path d="M96 91 C107 84 116 88 118 98 C120 107 109 111 105 102 C101 93 114 88 126 100" fill="none" stroke="#513728" stroke-width="3" stroke-linecap="round" />
+                    <path d="M120 115 C150 126 187 119 220 99" fill="none" stroke="#fff1bb" stroke-width="4" stroke-linecap="round" opacity="0.78" />
+                    <path d="M236 91 L253 108 L263 101 L248 83 Z" fill="url(#war-horn-silver)" stroke="#3f2a20" stroke-width="4" stroke-linejoin="round" />
+                    <path d="M255 92 L270 101 L260 113 L248 105 Z" fill="url(#war-horn-gold)" stroke="#3f2a20" stroke-width="4" stroke-linejoin="round" />
                   </svg>
                 </div>
                 <h2>The battle horn sounds</h2>
@@ -238,9 +260,21 @@
               Select one of your units, then choose a highlighted destination. Units travel in
               straight lines for up to nine spaces and stop at the first object.
             </p>
+
+            <section id="event-reveal" class="event-reveal" role="dialog" aria-modal="true" aria-labelledby="event-title" hidden>
+              <div id="event-card" class="event-card">
+                <p class="eyebrow">Saga card drawn</p>
+                <div id="event-symbol" class="event-symbol" aria-hidden="true">✦</div>
+                <h2 id="event-title">Royal Ransom</h2>
+                <p id="event-description" class="event-description"></p>
+                <p id="event-outcome" class="event-outcome"></p>
+                <p id="event-deck-count" class="event-deck-count"></p>
+                <button id="event-continue" class="primary-button" type="button">Continue the saga</button>
+              </div>
+            </section>
           </div>
 
-          <aside class="command-panel" aria-label="Turn controls">
+          <aside id="command-panel" class="command-panel" aria-label="Turn controls">
             <section id="active-chief" class="chief-card"></section>
 
             <section class="panel-section">
@@ -286,18 +320,6 @@
             <button id="view-battle-report" class="primary-button report-button" type="button" hidden>View battle report</button>
             <button id="new-game" class="text-button" type="button">Return to war council</button>
           </aside>
-        </section>
-
-        <section id="event-reveal" class="event-reveal" role="dialog" aria-modal="true" aria-labelledby="event-title" hidden>
-          <div id="event-card" class="event-card">
-            <p class="eyebrow">Saga card drawn</p>
-            <div id="event-symbol" class="event-symbol" aria-hidden="true">✦</div>
-            <h2 id="event-title">Royal Ransom</h2>
-            <p id="event-description" class="event-description"></p>
-            <p id="event-outcome" class="event-outcome"></p>
-            <p id="event-deck-count" class="event-deck-count"></p>
-            <button id="event-continue" class="primary-button" type="button">Continue the saga</button>
-          </div>
         </section>
 
         <section id="battle-report" class="battle-report" role="dialog" aria-modal="true" aria-labelledby="battle-report-title" hidden>

@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import "./styles.css";
+import { resolveBoardTheme, type BoardTheme } from "./boardThemes";
 import {
   UNIT_RULES,
   WINTER_PHASES,
@@ -63,7 +64,7 @@ import {
   stopBattleReportMusic,
   stopMenuMusic,
 } from "./audio";
-import type { Controller, EventCardId, EventDraw, EventEffect, GameState, PlayerId, PlayerSetup, Position, TreasureChest, Unit, UnitType } from "./types";
+import type { Controller, EventCardId, EventDraw, EventEffect, GameState, PlayerId, PlayerSetup, Position, Terrain, TreasureChest, Unit, UnitType } from "./types";
 
 const PLAYER_OPTIONS: Array<{
   id: PlayerId;
@@ -113,6 +114,8 @@ const endTurnButton = requireElement<HTMLButtonElement>("end-turn");
 const newGameButton = requireElement<HTMLButtonElement>("new-game");
 const roundLabel = requireElement<HTMLElement>("round-label");
 const turnBadge = requireElement<HTMLElement>("turn-badge");
+const boardColumn = requireElement<HTMLElement>("board-column");
+const gameCanvas = requireElement<HTMLElement>("game-canvas");
 const activeChief = requireElement<HTMLElement>("active-chief");
 const goldValue = requireElement<HTMLElement>("gold-value");
 const selectedUnitLabel = requireElement<HTMLElement>("selected-unit");
@@ -200,7 +203,12 @@ function closeLonghouse(): void {
 }
 
 let gameState: GameState | undefined;
+const activeBoardTheme: BoardTheme = resolveBoardTheme("new-graphics");
+document.documentElement.dataset.boardTheme = activeBoardTheme.id;
 let phaserGame: Phaser.Game | undefined;
+// Retained only as an internal development catalogue; the completed game
+// always presents the accepted Soft Storybook battlefield.
+const graphicsShowcaseActive = false;
 let boardScene: BoardScene | undefined;
 let selectedUnitId: string | undefined;
 let selectedPassengerId: string | undefined;
@@ -672,6 +680,11 @@ class BoardScene extends Phaser.Scene {
   private winterAnnouncementProgress?: number;
   private winterTransition?: { fromPhase: number; toPhase: number; progress: number };
   private sagaEvent?: { event: EventDraw; progress: number };
+  private showcaseUnits: Unit[] = [];
+  private showcaseTreasures: TreasureChest[] = [];
+  /** Presentation-only cadence for the slow shoreline shimmer. */
+  private shorelineRipplePhase = 0;
+  private shorelineRippleElapsedMs = 0;
 
   constructor() {
     super("BoardScene");
@@ -680,13 +693,14 @@ class BoardScene extends Phaser.Scene {
   create(): void {
     this.ready = true;
     this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
-      if (!gameState || mapPreviewActive || gameState.turnPhase !== "movement" || openingHornRunning || aiRunning || movementRunning || winterAnnouncementRunning || sagaEffectRunning || activePlayer(gameState).controller !== "human" || gameState.winnerId) return;
+      if (!gameState || graphicsShowcaseActive || mapPreviewActive || gameState.turnPhase !== "movement" || openingHornRunning || aiRunning || movementRunning || winterAnnouncementRunning || sagaEffectRunning || activePlayer(gameState).controller !== "human" || gameState.winnerId) return;
       const position = this.boardPositionFromPointer(pointer);
       if (!position) return;
       if (position.x < 0 || position.y < 0 || position.x >= gameState.width || position.y >= gameState.height) return;
       handleBoardSelection(position);
     });
     this.input.on("pointermove", (pointer: Phaser.Input.Pointer) => {
+      if (graphicsShowcaseActive) return;
       if (!gameState || interactionMode !== "fire" || !selectedUnitId) {
         if (this.hoveredFireCell) {
           this.hoveredFireCell = undefined;
@@ -706,6 +720,20 @@ class BoardScene extends Phaser.Scene {
         this.renderBoard();
       }
     });
+    this.renderBoard();
+  }
+
+  update(_time: number, delta: number): void {
+    if (!gameState || activeBoardTheme.terrainStyle !== "storybook" || graphicsShowcaseActive) return;
+    if (
+      this.transit || this.arrival || this.sinkingBoat || this.brokenCatapult || this.directClash ||
+      this.drunkConversion || this.castleAssault || this.flyingShot || this.shotImpact ||
+      this.winterTransition || this.sagaEvent
+    ) return;
+    this.shorelineRippleElapsedMs += delta;
+    if (this.shorelineRippleElapsedMs < 680) return;
+    this.shorelineRippleElapsedMs = 0;
+    this.shorelineRipplePhase = (this.shorelineRipplePhase + 1) % 5;
     this.renderBoard();
   }
 
@@ -752,10 +780,180 @@ class BoardScene extends Phaser.Scene {
     }
   }
 
+  private drawTerrainTile(
+    graphics: Phaser.GameObjects.Graphics,
+    x: number,
+    y: number,
+    terrain: Terrain,
+    iceAmount: number,
+    snowAmount: number,
+  ): void {
+    const palette = activeBoardTheme.palette;
+    const left = x * this.tileSize;
+    const top = y * this.tileSize;
+    const color = terrain === "ice"
+      ? blendColor(palette.water, palette.frozenWater, iceAmount)
+      : terrain === "water"
+        ? palette.water
+        : blendColor(palette.land, palette.snowyLand, snowAmount);
+    graphics.fillStyle(color, 1);
+    graphics.fillRect(left, top, this.tileSize, this.tileSize);
+
+    if (activeBoardTheme.terrainStyle === "storybook") {
+      const pattern = (x * 37 + y * 19) % 17;
+      if (terrain === "water" || (terrain === "ice" && iceAmount < 1)) {
+        if (pattern < 7) {
+          graphics.fillStyle(palette.waterFoam, 0.48 * (1 - iceAmount));
+          const waveY = top + 8 + (pattern % 3) * 6;
+          graphics.fillRoundedRect(left + 4 + (pattern % 4), waveY, 11, 2, 1);
+          graphics.fillRoundedRect(left + 17, waveY + (pattern % 2) * 4, 7, 2, 1);
+        } else if (pattern === 12) {
+          graphics.fillStyle(palette.waterDeep, 0.2 * (1 - iceAmount));
+          graphics.fillRoundedRect(left + 8, top + 20, 13, 2, 1);
+        }
+      }
+      if (terrain === "ice" && iceAmount > 0) {
+        if (pattern < 6) {
+          graphics.fillStyle(palette.iceGlaze, 0.48 * iceAmount);
+          graphics.fillRoundedRect(left + 5, top + 6 + (pattern % 3) * 4, 10, 3, 2);
+        }
+        if (pattern === 8 || pattern === 14) {
+          graphics.lineStyle(1, palette.iceCrack, 0.58 * iceAmount);
+          graphics.strokeLineShape(new Phaser.Geom.Line(left + 18, top + 7, left + 15, top + 14));
+          graphics.strokeLineShape(new Phaser.Geom.Line(left + 15, top + 14, left + 20, top + 18));
+        }
+      } else if (terrain === "land" && snowAmount > 0) {
+        if (pattern < 5) {
+          graphics.fillStyle(palette.snowShade, 0.28 * snowAmount);
+          graphics.fillRoundedRect(left + 3, top + 20 - (pattern % 3) * 3, 11, 3, 2);
+        }
+        if (pattern === 9) {
+          graphics.fillStyle(palette.snowSpeckle, 0.65 * snowAmount);
+          graphics.fillCircle(left + 21, top + 9, 2);
+        }
+        // Winter softens the land rather than erasing it entirely: a few
+        // muted grass tips still peek through settled snow for orientation.
+        if (pattern === 3 || pattern === 6 || pattern === 11 || pattern === 15) {
+          const grassVisible = 0.28 + (1 - snowAmount) * 0.22;
+          graphics.fillStyle(palette.grassTuft, grassVisible);
+          graphics.fillRoundedRect(left + 7 + (pattern % 3) * 4, top + 20, 8, 2.5, 1);
+          graphics.lineStyle(1, palette.grassTuft, grassVisible * 1.35);
+          graphics.strokeLineShape(new Phaser.Geom.Line(left + 12, top + 21, left + 14, top + 17));
+          graphics.strokeLineShape(new Phaser.Geom.Line(left + 14, top + 21, left + 17, top + 18));
+          graphics.strokeLineShape(new Phaser.Geom.Line(left + 10, top + 21, left + 10, top + 18));
+        }
+      } else if (terrain === "land") {
+        if (pattern < 5) {
+          graphics.fillStyle(palette.landLight, 0.32);
+          graphics.fillEllipse(left + 9 + (pattern % 4) * 3, top + 8 + (pattern % 3) * 6, 12, 5);
+        } else if (pattern === 7 || pattern === 13) {
+          graphics.lineStyle(1, palette.grassTuft, 0.42);
+          graphics.strokeLineShape(new Phaser.Geom.Line(left + 18, top + 22, left + 20, top + 17));
+          graphics.strokeLineShape(new Phaser.Geom.Line(left + 20, top + 22, left + 23, top + 18));
+        }
+        if (pattern === 2) {
+          graphics.fillStyle(palette.grassFlower, 0.72);
+          graphics.fillCircle(left + 22, top + 10, 1.7);
+        }
+      }
+      const gridColor = terrain === "water"
+        ? palette.waterGrid
+        : terrain === "ice"
+          ? blendColor(palette.waterGrid, palette.iceGrid, iceAmount)
+          : blendColor(palette.landGrid, palette.snowContour, snowAmount);
+      graphics.lineStyle(1, gridColor, 0.1);
+      graphics.strokeRect(left, top, this.tileSize, this.tileSize);
+      return;
+    }
+
+    if (terrain === "water" || (terrain === "ice" && iceAmount < 1)) {
+      const rippleOffset = (x * 11 + y * 7) % 9;
+      graphics.fillStyle(palette.waterRipple, 0.48 * (1 - iceAmount));
+      graphics.fillRect(left + 3, top + 7 + rippleOffset, 11, 2);
+      graphics.fillRect(left + 17, top + 18 - rippleOffset / 2, 8, 2);
+    }
+    if (terrain === "ice" && iceAmount > 0) {
+      graphics.fillStyle(palette.iceGlaze, 0.52 * iceAmount);
+      graphics.fillTriangle(left + 5, top + 6, left + 14, top + 4, left + 10, top + 12);
+      graphics.lineStyle(1, palette.iceCrack, 0.8 * iceAmount);
+      graphics.strokeLineShape(new Phaser.Geom.Line(left + 18, top + 7, left + 23, top + 19));
+    } else if (terrain === "land" && snowAmount > 0) {
+      graphics.fillStyle(palette.snowSpeckle, 0.72 * snowAmount);
+      graphics.fillCircle(left + 7 + ((x + y) % 3) * 8, top + 8, 2);
+      graphics.fillCircle(left + 20, top + 21 - ((x * 5 + y) % 8), 1.5);
+      graphics.lineStyle(1, palette.snowContour, 0.42 * snowAmount);
+      graphics.strokeLineShape(new Phaser.Geom.Line(left + 4, top + 25, left + 12, top + 23));
+    } else {
+      const tuftOffset = (x * 17 + y * 13) % 16;
+      graphics.lineStyle(1, palette.grassTuft, 0.65);
+      graphics.strokeLineShape(new Phaser.Geom.Line(left + 4 + tuftOffset, top + 23, left + 7 + tuftOffset, top + 17));
+      graphics.fillStyle(palette.grassFlower, 0.55);
+      graphics.fillCircle(left + 7 + ((x + y) % 3) * 8, top + 8 + ((x * 3 + y) % 2) * 12, 1.2);
+    }
+    graphics.lineStyle(1, terrain === "water" ? palette.waterGrid : terrain === "ice" ? blendColor(palette.waterGrid, palette.iceGrid, iceAmount) : palette.landGrid, 0.34);
+    graphics.strokeRect(left, top, this.tileSize, this.tileSize);
+  }
+
+  private drawStorybookCoastlines(graphics: Phaser.GameObjects.Graphics): void {
+    if (!gameState || activeBoardTheme.terrainStyle !== "storybook") return;
+    const palette = activeBoardTheme.palette;
+    const isWater = (position: Position) => {
+      const terrain = terrainAt(gameState!, position);
+      return terrain === "water" || terrain === "ice";
+    };
+    const directions = [
+      { dx: 0, dy: -1, edge: "top" },
+      { dx: 1, dy: 0, edge: "right" },
+      { dx: 0, dy: 1, edge: "bottom" },
+      { dx: -1, dy: 0, edge: "left" },
+    ] as const;
+    for (let y = 0; y < gameState.height; y += 1) {
+      for (let x = 0; x < gameState.width; x += 1) {
+        if (!isWater({ x, y })) continue;
+        const shorelineTerrain = terrainAt(gameState, { x, y });
+        const shallowColor = shorelineTerrain === "ice"
+          ? blendColor(palette.frozenWater, palette.snowyLand, 0.26)
+          : blendColor(palette.water, palette.waterFoam, 0.28);
+        const landFringe = shorelineTerrain === "ice"
+          ? palette.snowyLand
+          : blendColor(palette.land, palette.waterFoam, 0.12);
+        for (const direction of directions) {
+          const neighbour = { x: x + direction.dx, y: y + direction.dy };
+          if (neighbour.x < 0 || neighbour.y < 0 || neighbour.x >= gameState.width || neighbour.y >= gameState.height || isWater(neighbour)) continue;
+          const left = x * this.tileSize;
+          const top = y * this.tileSize;
+          graphics.fillStyle(shallowColor, 0.5);
+          if (direction.edge === "top") graphics.fillRect(left, top, this.tileSize, 4);
+          if (direction.edge === "right") graphics.fillRect(left + this.tileSize - 4, top, 4, this.tileSize);
+          if (direction.edge === "bottom") graphics.fillRect(left, top + this.tileSize - 4, this.tileSize, 4);
+          if (direction.edge === "left") graphics.fillRect(left, top, 4, this.tileSize);
+          graphics.fillStyle(landFringe, 0.32);
+          if (direction.edge === "top" && top >= 2) graphics.fillRect(left, top - 2, this.tileSize, 2);
+          if (direction.edge === "right") graphics.fillRect(left + this.tileSize, top, 2, this.tileSize);
+          if (direction.edge === "bottom") graphics.fillRect(left, top + this.tileSize, this.tileSize, 2);
+          if (direction.edge === "left" && left >= 2) graphics.fillRect(left - 2, top, 2, this.tileSize);
+          if ((x * 3 + y * 5 + this.shorelineRipplePhase) % 3 === 0) {
+            const rippleOffset = (this.shorelineRipplePhase * 3 + x + y) % 13;
+            graphics.fillStyle(palette.waterFoam, shorelineTerrain === "ice" ? 0.24 : 0.36);
+            if (direction.edge === "top") graphics.fillRoundedRect(left + 4 + rippleOffset, top + 4, 9, 2, 1);
+            if (direction.edge === "right") graphics.fillRoundedRect(left + this.tileSize - 6, top + 4 + rippleOffset, 2, 9, 1);
+            if (direction.edge === "bottom") graphics.fillRoundedRect(left + 4 + rippleOffset, top + this.tileSize - 6, 9, 2, 1);
+            if (direction.edge === "left") graphics.fillRoundedRect(left + 4, top + 4 + rippleOffset, 2, 9, 1);
+          }
+        }
+      }
+    }
+  }
+
   renderBoard(): void {
     if (!gameState) return;
+    const palette = activeBoardTheme.palette;
     this.children.removeAll();
     const graphics = this.add.graphics();
+    if (graphicsShowcaseActive) {
+      this.renderGraphicsShowcase(graphics);
+      return;
+    }
     const legalMoves = new Set(
       selectedUnitId && interactionMode === "move"
         ? getLegalMoves(gameState, selectedUnitId).map(positionKey)
@@ -789,79 +987,52 @@ class BoardScene extends Phaser.Scene {
             : 0;
         const iceAmount = terrain === "ice" ? winterAmount : 0;
         const snowAmount = terrain === "land" ? winterAmount : 0;
-        const color = terrain === "ice"
-          ? blendColor(0x249fc4, 0xd3eff0, iceAmount)
-          : terrain === "water"
-            ? 0x249fc4
-            : blendColor(0x9bc96b, 0xdde7d7, snowAmount);
-        graphics.fillStyle(color, 1);
-        graphics.fillRect(x * this.tileSize, y * this.tileSize, this.tileSize, this.tileSize);
-        if (terrain === "water" || (terrain === "ice" && iceAmount < 1)) {
-          const rippleOffset = (x * 11 + y * 7) % 9;
-          graphics.fillStyle(0x9ce5ee, 0.48 * (1 - iceAmount));
-          graphics.fillRect(x * this.tileSize + 3, y * this.tileSize + 7 + rippleOffset, 11, 2);
-          graphics.fillRect(x * this.tileSize + 17, y * this.tileSize + 18 - rippleOffset / 2, 8, 2);
-        }
-        if (terrain === "ice" && iceAmount > 0) {
-          graphics.fillStyle(0xffffff, 0.52 * iceAmount);
-          graphics.fillTriangle(x * this.tileSize + 5, y * this.tileSize + 6, x * this.tileSize + 14, y * this.tileSize + 4, x * this.tileSize + 10, y * this.tileSize + 12);
-          graphics.lineStyle(1, 0x85c5d2, 0.8 * iceAmount);
-          graphics.strokeLineShape(new Phaser.Geom.Line(x * this.tileSize + 18, y * this.tileSize + 7, x * this.tileSize + 23, y * this.tileSize + 19));
-        } else if (terrain === "land" && snowAmount > 0) {
-          graphics.fillStyle(0xf7fbf4, 0.72 * snowAmount);
-          graphics.fillCircle(x * this.tileSize + 7 + ((x + y) % 3) * 8, y * this.tileSize + 8, 2);
-          graphics.fillCircle(x * this.tileSize + 20, y * this.tileSize + 21 - ((x * 5 + y) % 8), 1.5);
-          graphics.lineStyle(1, 0xa9c3c4, 0.42 * snowAmount);
-          graphics.strokeLineShape(new Phaser.Geom.Line(x * this.tileSize + 4, y * this.tileSize + 25, x * this.tileSize + 12, y * this.tileSize + 23));
-        } else {
-          const tuftOffset = (x * 17 + y * 13) % 16;
-          graphics.lineStyle(1, 0x639952, 0.65);
-          graphics.strokeLineShape(new Phaser.Geom.Line(x * this.tileSize + 4 + tuftOffset, y * this.tileSize + 23, x * this.tileSize + 7 + tuftOffset, y * this.tileSize + 17));
-          graphics.fillStyle(0xe1d875, 0.55);
-          graphics.fillCircle(x * this.tileSize + 7 + ((x + y) % 3) * 8, y * this.tileSize + 8 + ((x * 3 + y) % 2) * 12, 1.2);
-        }
-        graphics.lineStyle(1, terrain === "water" ? 0x7dd4df : terrain === "ice" ? blendColor(0x7dd4df, 0x9bcfd6, iceAmount) : 0x739d55, 0.34);
-        graphics.strokeRect(x * this.tileSize, y * this.tileSize, this.tileSize, this.tileSize);
+        this.drawTerrainTile(graphics, x, y, terrain, iceAmount, snowAmount);
         if (legalMoves.has(positionKey(position))) {
-          graphics.fillStyle(0xf4da77, 0.38);
-          graphics.fillRect(x * this.tileSize + 2, y * this.tileSize + 2, this.tileSize - 4, this.tileSize - 4);
+          if (activeBoardTheme.terrainStyle === "storybook") {
+            graphics.fillStyle(palette.legalMove, 0.18);
+            graphics.fillRoundedRect(x * this.tileSize + 3, y * this.tileSize + 3, this.tileSize - 6, this.tileSize - 6, 6);
+            graphics.lineStyle(2, palette.legalMove, 0.78);
+            graphics.strokeRoundedRect(x * this.tileSize + 4, y * this.tileSize + 4, this.tileSize - 8, this.tileSize - 8, 5);
+            graphics.fillStyle(0xfff3bd, 0.82);
+            graphics.fillCircle(x * this.tileSize + 9, y * this.tileSize + 9, 1.5);
+          } else {
+            graphics.fillStyle(palette.legalMove, 0.38);
+            graphics.fillRect(x * this.tileSize + 2, y * this.tileSize + 2, this.tileSize - 4, this.tileSize - 4);
+          }
         }
         if (fireTargets.has(positionKey(position))) {
-          graphics.fillStyle(0xff593f, 0.29);
-          graphics.fillCircle(
-            x * this.tileSize + this.tileSize / 2,
-            y * this.tileSize + this.tileSize / 2,
-            this.tileSize * 0.42,
-          );
+          const centreX = x * this.tileSize + this.tileSize / 2;
+          const centreY = y * this.tileSize + this.tileSize / 2;
+          graphics.fillStyle(palette.fireTarget, activeBoardTheme.terrainStyle === "storybook" ? 0.17 : 0.29);
+          graphics.fillCircle(centreX, centreY, this.tileSize * 0.42);
+          if (activeBoardTheme.terrainStyle === "storybook") {
+            graphics.lineStyle(1.5, 0xffcf93, 0.78);
+            graphics.strokeCircle(centreX, centreY, this.tileSize * 0.3);
+            graphics.strokeLineShape(new Phaser.Geom.Line(centreX - 5, centreY, centreX + 5, centreY));
+            graphics.strokeLineShape(new Phaser.Geom.Line(centreX, centreY - 5, centreX, centreY + 5));
+          }
         }
         if (disembarkTargets.has(positionKey(position))) {
-          graphics.fillStyle(0x8ee5cf, 0.55);
-          graphics.fillCircle(
-            x * this.tileSize + this.tileSize / 2,
-            y * this.tileSize + this.tileSize / 2,
-            this.tileSize * 0.35,
-          );
+          const centreX = x * this.tileSize + this.tileSize / 2;
+          const centreY = y * this.tileSize + this.tileSize / 2;
+          graphics.fillStyle(palette.disembarkTarget, activeBoardTheme.terrainStyle === "storybook" ? 0.28 : 0.55);
+          graphics.fillCircle(centreX, centreY, this.tileSize * 0.35);
+          if (activeBoardTheme.terrainStyle === "storybook") {
+            graphics.lineStyle(2, 0xd9fff1, 0.9);
+            graphics.strokeCircle(centreX, centreY, this.tileSize * 0.27);
+            graphics.fillStyle(0xd9fff1, 0.9);
+            graphics.fillTriangle(centreX - 4, centreY + 4, centreX + 4, centreY + 4, centreX, centreY - 5);
+          }
         }
       }
     }
 
+    this.drawStorybookCoastlines(graphics);
+
     for (const player of gameState.players) {
-      const x = player.castle.x * this.tileSize;
-      const y = player.castle.y * this.tileSize;
       const visuallyEliminated = player.eliminated && player.id !== this.concealedCastlePlayerId;
-      graphics.fillStyle(0x253c3f, 0.18);
-      graphics.fillEllipse(x + 16, y + 27, 27, 7);
-      graphics.fillStyle(visuallyEliminated ? 0x4f514d : player.color, 1);
-      graphics.fillRect(x + 3, y + 11, this.tileSize - 6, this.tileSize - 12);
-      graphics.fillRect(x + 4, y + 6, 7, 9);
-      graphics.fillRect(x + this.tileSize - 11, y + 6, 7, 9);
-      graphics.fillStyle(0xf5e5bd, visuallyEliminated ? 0.3 : 0.9);
-      graphics.fillRect(x + 7, y + 16, 4, 5);
-      graphics.fillRect(x + 19, y + 16, 4, 5);
-      graphics.fillStyle(visuallyEliminated ? 0x4f514d : player.color, 1);
-      graphics.fillTriangle(x + 12, y + 5, x + 18, y + 7, x + 12, y + 9);
-      graphics.lineStyle(2, 0x4d3a2c, visuallyEliminated ? 0.25 : 0.75);
-      graphics.strokeRect(x + 3, y + 11, this.tileSize - 6, this.tileSize - 12);
+      this.drawCastleArtwork(graphics, player.castle, player.color, visuallyEliminated);
     }
 
     const sagaEffects = this.sagaEvent?.event.effects ?? [];
@@ -929,20 +1100,30 @@ class BoardScene extends Phaser.Scene {
         );
         const radius = catapultScatterRadius(distance);
         const diameter = radius * 2 + 1;
-        graphics.fillStyle(0xff9a5b, 0.06);
-        graphics.fillRect(
-          (this.hoveredFireCell.x - radius) * this.tileSize,
-          (this.hoveredFireCell.y - radius) * this.tileSize,
-          diameter * this.tileSize,
-          diameter * this.tileSize,
-        );
-        graphics.lineStyle(3, 0xffc27a, 0.475);
-        graphics.strokeRect(
-          (this.hoveredFireCell.x - radius) * this.tileSize,
-          (this.hoveredFireCell.y - radius) * this.tileSize,
-          diameter * this.tileSize,
-          diameter * this.tileSize,
-        );
+        const scatterX = (this.hoveredFireCell.x - radius) * this.tileSize;
+        const scatterY = (this.hoveredFireCell.y - radius) * this.tileSize;
+        const scatterSize = diameter * this.tileSize;
+        if (activeBoardTheme.terrainStyle === "storybook") {
+          graphics.fillStyle(palette.aimArea, 0.045);
+          graphics.fillRoundedRect(scatterX + 2, scatterY + 2, scatterSize - 4, scatterSize - 4, 9);
+          graphics.lineStyle(2, palette.aimOutline, 0.5);
+          graphics.strokeRoundedRect(scatterX + 3, scatterY + 3, scatterSize - 6, scatterSize - 6, 8);
+          // Small corner pips describe the possible landing region without
+          // reintroducing the old permanent intended-target circle.
+          graphics.fillStyle(palette.aimOutline, 0.68);
+          const scatterPips: Array<[number, number]> = [
+            [scatterX + 8, scatterY + 8], [scatterX + scatterSize - 8, scatterY + 8],
+            [scatterX + 8, scatterY + scatterSize - 8], [scatterX + scatterSize - 8, scatterY + scatterSize - 8],
+          ];
+          for (const [pipX, pipY] of scatterPips) {
+            graphics.fillCircle(pipX, pipY, 2);
+          }
+        } else {
+          graphics.fillStyle(palette.aimArea, 0.06);
+          graphics.fillRect(scatterX, scatterY, scatterSize, scatterSize);
+          graphics.lineStyle(3, palette.aimOutline, 0.475);
+          graphics.strokeRect(scatterX, scatterY, scatterSize, scatterSize);
+        }
       }
     }
 
@@ -953,21 +1134,43 @@ class BoardScene extends Phaser.Scene {
     if (selectedUnitId) {
       const selected = gameState.units.find((unit) => unit.id === selectedUnitId);
       if (selected) {
-        graphics.lineStyle(3, 0xffed9e, 1);
         for (const cell of unitFootprint(selected)) {
-          graphics.strokeRect(
-            cell.x * this.tileSize + 2,
-            cell.y * this.tileSize + 2,
-            this.tileSize - 4,
-            this.tileSize - 4,
-          );
+          if (activeBoardTheme.terrainStyle === "storybook") {
+            graphics.fillStyle(palette.selectedUnit, 0.12);
+            graphics.fillRoundedRect(cell.x * this.tileSize + 2, cell.y * this.tileSize + 2, this.tileSize - 4, this.tileSize - 4, 6);
+            graphics.lineStyle(2.5, palette.selectedUnit, 1);
+            graphics.strokeRoundedRect(cell.x * this.tileSize + 3, cell.y * this.tileSize + 3, this.tileSize - 6, this.tileSize - 6, 5);
+          } else {
+            graphics.lineStyle(3, palette.selectedUnit, 1);
+            graphics.strokeRect(
+              cell.x * this.tileSize + 2,
+              cell.y * this.tileSize + 2,
+              this.tileSize - 4,
+              this.tileSize - 4,
+            );
+          }
         }
       }
     }
 
     if ((presentedWinterPhase > 0 || this.winterTransition) && toWinterPhase < WINTER_PHASES) {
-      graphics.lineStyle(3, 0xe9fbff, 0.75);
-      graphics.strokeLineShape(new Phaser.Geom.Line(0, snowLine * this.tileSize, gameState.width * this.tileSize, snowLine * this.tileSize));
+      const frontY = snowLine * this.tileSize;
+      if (activeBoardTheme.terrainStyle === "storybook") {
+        const transitionStrength = this.winterTransition ? 0.72 : 0.34;
+        graphics.fillStyle(0xe8fbff, 0.14 * transitionStrength);
+        graphics.fillRect(0, frontY - 11, gameState.width * this.tileSize, 22);
+        graphics.lineStyle(2, palette.winterFront, 0.78);
+        graphics.strokeLineShape(new Phaser.Geom.Line(0, frontY, gameState.width * this.tileSize, frontY));
+        for (let flake = 0; flake < gameState.width * 2; flake += 1) {
+          const flakeX = (flake * 47 + 19) % (gameState.width * this.tileSize);
+          const flakeY = frontY - 7 + (flake % 3) * 6;
+          graphics.fillStyle(0xffffff, 0.56 * transitionStrength);
+          graphics.fillCircle(flakeX, flakeY, 1 + (flake % 2) * 0.55);
+        }
+      } else {
+        graphics.lineStyle(3, palette.winterFront, 0.75);
+        graphics.strokeLineShape(new Phaser.Geom.Line(0, frontY, gameState.width * this.tileSize, frontY));
+      }
     }
 
     if (this.winterAnnouncementProgress !== undefined) {
@@ -985,9 +1188,404 @@ class BoardScene extends Phaser.Scene {
     this.renderBoard();
   }
 
+  /**
+   * Non-playable visual catalogue. It deliberately uses local display-only
+   * pieces rather than adding anything to the live serializable match.
+   */
+  private renderGraphicsShowcase(graphics: Phaser.GameObjects.Graphics): void {
+    const palette = activeBoardTheme.palette;
+    const width = gameState!.width;
+    const height = gameState!.height;
+    const label = (x: number, y: number, text: string, size = 12) => {
+      this.add.text(x, y, text, {
+        fontFamily: "Arial, sans-serif",
+        fontSize: `${size}px`,
+        fontStyle: "bold",
+        color: "#17323a",
+        stroke: "#fff8df",
+        strokeThickness: 4,
+        align: "center",
+      }).setOrigin(0.5).setDepth(20);
+    };
+    const section = (y: number, text: string) => {
+      graphics.fillStyle(0x17323a, 0.78);
+      graphics.fillRoundedRect(12, y, width * this.tileSize - 24, 25, 8);
+      this.add.text(26, y + 5, text, {
+        fontFamily: "Georgia, serif",
+        fontSize: "13px",
+        fontStyle: "bold",
+        color: "#ffe296",
+        letterSpacing: 2,
+      }).setDepth(20);
+    };
+    const fillTiles = (startX: number, endX: number, startY: number, endY: number, terrain: Terrain, winterAmount = 0) => {
+      for (let y = startY; y <= endY; y += 1) {
+        for (let x = startX; x <= endX; x += 1) {
+          this.drawTerrainTile(
+            graphics,
+            x,
+            y,
+            terrain,
+            terrain === "ice" ? winterAmount : 0,
+            terrain === "land" ? winterAmount : 0,
+          );
+        }
+      }
+    };
+
+    fillTiles(0, width - 1, 0, height - 1, "land");
+    graphics.fillStyle(0xfff4cc, 0.64);
+    graphics.fillRoundedRect(14, 8, width * this.tileSize - 28, 34, 10);
+    label(width * this.tileSize / 2, 25, `${activeBoardTheme.label.toUpperCase()} · GRAPHICS GALLERY`, 16);
+
+    // Terrain swatches use the exact palette currently selected.
+    fillTiles(0, 7, 2, 4, "land");
+    fillTiles(8, 15, 2, 4, "water");
+    fillTiles(16, 23, 2, 4, "ice", 1);
+    fillTiles(24, 31, 2, 4, "land", 1);
+    label(120, 135, "LAND");
+    label(360, 135, "FJORD WATER");
+    label(600, 135, "ICE");
+    label(840, 135, "SNOW-COVERED LAND");
+
+    section(154, "FOUR FACTIONS · CASTLES AND CORE VIKINGS");
+    const factionCentres = [3, 11, 19, 27];
+    this.showcaseUnits = PLAYER_OPTIONS.map((player, index) => ({
+      id: `showcase-${player.id}-viking`,
+      playerId: player.id,
+      type: "soldier" as const,
+      position: { x: factionCentres[index]! + 1, y: 7 },
+      moved: false,
+      fired: false,
+    }));
+    for (let index = 0; index < PLAYER_OPTIONS.length; index += 1) {
+      const option = PLAYER_OPTIONS[index]!;
+      const centre = factionCentres[index]!;
+      this.drawShowcaseCastle(graphics, { x: centre - 1, y: 7 }, option.color, false);
+      label((centre + 0.5) * this.tileSize, 278, option.name.toUpperCase());
+    }
+    for (const unit of this.showcaseUnits) this.drawUnit(graphics, unit);
+
+    section(286, "VIKING STATES · EACH MUST REMAIN READABLE AT BOARD SCALE");
+    const stateUnits: Unit[] = [
+      { id: "showcase-ordinary", playerId: "blue", type: "soldier", position: { x: 1, y: 11 }, moved: false, fired: false },
+      { id: "showcase-veteran", playerId: "red", type: "soldier", position: { x: 5, y: 11 }, moved: false, fired: false, veteran: true },
+      { id: "showcase-drunk", playerId: "pink", type: "soldier", position: { x: 9, y: 11 }, moved: false, fired: false, drunk: true },
+      { id: "showcase-rage", playerId: "green", type: "soldier", position: { x: 13, y: 11 }, moved: false, fired: false, rage: true },
+      { id: "showcase-shield", playerId: "blue", type: "soldier", position: { x: 17, y: 11 }, moved: false, fired: false, shieldWall: true },
+      { id: "showcase-carrier", playerId: "red", type: "soldier", position: { x: 21, y: 11 }, moved: false, fired: false, veteran: true },
+      { id: "showcase-catapult", playerId: "green", type: "catapult", position: { x: 27, y: 11 }, moved: false, fired: false },
+    ];
+    this.showcaseUnits.push(...stateUnits);
+    this.showcaseTreasures = [{ id: "showcase-carried-gold", value: 40, position: { x: 21, y: 11 }, carriedBy: "showcase-carrier" }];
+    for (const unit of stateUnits) this.drawUnit(graphics, unit);
+    ["VIKING", "VETERAN", "DRUNK", "RAGE", "SHIELD WALL", "TREASURE", "CATAPULT"].forEach((text, index) => {
+      const centres = [1.5, 5.5, 9.5, 13.5, 17.5, 21.5, 28];
+      label(centres[index]! * this.tileSize, 398, text, 9);
+    });
+
+    section(414, "LONGBOATS · CREW, CARGO, PROTECTION AND WINTER");
+    fillTiles(0, 7, 15, 19, "water");
+    fillTiles(8, 15, 15, 19, "water");
+    fillTiles(16, 23, 15, 19, "ice", 1);
+    const boats: Unit[] = [
+      { id: "showcase-empty-boat", playerId: "blue", type: "longboat", position: { x: 3, y: 16 }, moved: false, fired: false, facing: { x: 1, y: 0 } },
+      { id: "showcase-crewed-boat", playerId: "red", type: "longboat", position: { x: 11, y: 16 }, moved: false, fired: false, facing: { x: 1, y: 0 } },
+      { id: "showcase-frozen-boat", playerId: "pink", type: "longboat", position: { x: 19, y: 16 }, moved: false, fired: false, facing: { x: 1, y: 0 } },
+    ];
+    const crew: Unit[] = [
+      { id: "showcase-crew-1", playerId: "red", type: "soldier", position: { x: 11, y: 16 }, moved: false, fired: false, embarkedOn: "showcase-crewed-boat" },
+      { id: "showcase-crew-2", playerId: "red", type: "soldier", position: { x: 11, y: 16 }, moved: false, fired: false, veteran: true, embarkedOn: "showcase-crewed-boat" },
+      { id: "showcase-crew-3", playerId: "red", type: "soldier", position: { x: 11, y: 16 }, moved: false, fired: false, rage: true, embarkedOn: "showcase-crewed-boat" },
+      { id: "showcase-frozen-crew", playerId: "pink", type: "soldier", position: { x: 19, y: 16 }, moved: false, fired: false, shieldWall: true, embarkedOn: "showcase-frozen-boat" },
+    ];
+    this.showcaseUnits.push(...boats, ...crew);
+    this.showcaseTreasures.push({ id: "showcase-boat-gold", value: 30, position: { x: 19, y: 16 }, carriedBy: "showcase-frozen-crew" });
+    for (const boat of boats) this.drawUnit(graphics, boat);
+    // Sturdy Longboat is a faction-wide protection, represented here by its
+    // persistent ward ring around the crewed vessel.
+    graphics.lineStyle(4, 0x7de3f2, 0.9);
+    graphics.strokeRoundedRect(9 * this.tileSize + 4, 15 * this.tileSize + 8, 4 * this.tileSize - 8, 3 * this.tileSize - 16, 18);
+    label(105, 568, "EMPTY LONGBOAT", 9);
+    label(345, 568, "3 CREW · STURDY", 9);
+    label(585, 568, "FROZEN · CARGO", 9);
+    const wreck: Unit = { id: "showcase-wreck", playerId: "green", type: "catapult", position: { x: 25, y: 16 }, moved: false, fired: false };
+    this.drawBrokenCatapult(graphics, { unit: wreck, progress: 0.72 });
+    label(825, 568, "BROKEN CATAPULT", 9);
+
+    section(584, "OBJECTS, CASTLE STATES AND IMPACT MARKS");
+    const looseTreasure: TreasureChest = { id: "showcase-loose-chest", value: 30, position: { x: 2, y: 20 } };
+    this.drawTreasure(graphics, looseTreasure);
+    this.drawHorn(graphics, { x: 6, y: 20 });
+    this.drawShowcaseCastle(graphics, { x: 10, y: 20 }, PLAYER_OPTIONS[0]!.color, false);
+    this.drawShowcaseCastle(graphics, { x: 14, y: 20 }, PLAYER_OPTIONS[1]!.color, true);
+    this.drawShowcaseCrater(graphics, { x: 19, y: 20 });
+    this.drawShowcaseSplash(graphics, { x: 23, y: 20 });
+    graphics.lineStyle(3, palette.selectedUnit, 1);
+    graphics.strokeRect(28 * this.tileSize + 2, 20 * this.tileSize + 2, this.tileSize - 4, this.tileSize - 4);
+    label(75, 695, "TREASURE", 9);
+    label(195, 695, "DRINKING HORN", 9);
+    label(315, 695, "ACTIVE CASTLE", 9);
+    label(435, 695, "DEFEATED CASTLE", 9);
+    label(585, 695, "CRATER", 9);
+    label(705, 695, "WATER IMPACT", 9);
+    label(855, 695, "SELECTION", 9);
+  }
+
+  private drawShowcaseCastle(
+    graphics: Phaser.GameObjects.Graphics,
+    position: Position,
+    cssColor: string,
+    eliminated: boolean,
+  ): void {
+    const factionColor = Number.parseInt(cssColor.slice(1), 16);
+    this.drawCastleArtwork(graphics, position, factionColor, eliminated);
+  }
+
+  private drawCastleArtwork(
+    graphics: Phaser.GameObjects.Graphics,
+    position: Position,
+    factionColor: number,
+    eliminated: boolean,
+    horizontalOffset = 0,
+  ): void {
+    const palette = activeBoardTheme.palette;
+    const x = position.x * this.tileSize + horizontalOffset;
+    const y = position.y * this.tileSize;
+    if (activeBoardTheme.terrainStyle === "storybook") {
+      const fromWinterPhase = this.winterTransition?.fromPhase ?? presentedWinterPhase;
+      const toWinterPhase = this.winterTransition?.toPhase ?? presentedWinterPhase;
+      const winterFade = this.winterTransition?.progress ?? 1;
+      const previousSnowLine = Math.ceil((gameState?.height ?? 0) * fromWinterPhase / WINTER_PHASES);
+      const nextSnowLine = Math.ceil((gameState?.height ?? 0) * toWinterPhase / WINTER_PHASES);
+      const snowAmount = position.y < previousSnowLine
+        ? 1
+        : position.y < nextSnowLine
+          ? winterFade
+          : 0;
+      const bannerColor = eliminated ? palette.defeatedCastle : factionColor;
+      const moundColor = snowAmount > 0
+        ? blendColor(eliminated ? 0x6a716b : 0x719655, palette.snowyLand, snowAmount)
+        : eliminated ? 0x6a716b : 0x719655;
+      const stoneColor = eliminated ? 0x77766f : 0xd8c18d;
+      const stoneLight = eliminated ? 0x9a9991 : 0xf0dbab;
+      const outlineColor = eliminated ? 0x454944 : 0x5d4432;
+      graphics.fillStyle(palette.castleShadow, 0.26);
+      graphics.fillEllipse(x + 16, y + 27, 29, 7);
+      // A cheerful fort on a grassy mound: solid, readable silhouettes with
+      // a much larger faction-painted gatehouse than the first palisade pass.
+      graphics.fillStyle(moundColor, eliminated ? 0.48 : 0.9);
+      graphics.fillEllipse(x + 16, y + 23, 30, 14);
+      if (snowAmount > 0) {
+        graphics.fillStyle(palette.snowShade, 0.36 * snowAmount);
+        graphics.fillEllipse(x + 16, y + 25, 25, 7);
+        graphics.fillStyle(palette.snowSpeckle, 0.58 * snowAmount);
+        graphics.fillEllipse(x + 10, y + 20, 9, 3);
+        graphics.fillEllipse(x + 23, y + 22, 7, 2.5);
+      }
+      graphics.fillStyle(stoneColor, 1);
+      graphics.fillRoundedRect(x + 3, y + 14, 26, 11, 3);
+      graphics.fillStyle(stoneLight, eliminated ? 0.22 : 0.58);
+      graphics.fillRoundedRect(x + 5, y + 15, 22, 3, 1.5);
+      // The two coloured towers and central gatehouse deliberately make each
+      // faction legible even before its small pennant is noticed.
+      graphics.fillStyle(bannerColor, eliminated ? 0.36 : 0.9);
+      graphics.fillRoundedRect(x + 5, y + 10, 7, 14, 2);
+      graphics.fillRoundedRect(x + 20, y + 10, 7, 14, 2);
+      graphics.fillRoundedRect(x + 10, y + 8, 12, 16, 2);
+      graphics.fillStyle(stoneLight, eliminated ? 0.2 : 0.52);
+      graphics.fillRect(x + 6, y + 11, 5, 2);
+      graphics.fillRect(x + 21, y + 11, 5, 2);
+      graphics.fillRect(x + 11, y + 9, 10, 2);
+      graphics.fillStyle(outlineColor, 0.9);
+      graphics.fillRoundedRect(x + 13, y + 18, 6, 7, 2);
+      if (eliminated) {
+        // A fallen gate and slumped flag keep a defeated home unmistakable,
+        // while the fort remains in place as the normal blocking object.
+        graphics.fillStyle(0x343935, 0.75);
+        graphics.fillTriangle(x + 11, y + 17, x + 20, y + 23, x + 10, y + 23);
+        graphics.lineStyle(2, outlineColor, 0.78);
+        graphics.strokeLineShape(new Phaser.Geom.Line(x + 17, y + 9, x + 22, y + 4));
+        graphics.fillStyle(bannerColor, 0.38);
+        graphics.fillTriangle(x + 22, y + 4, x + 28, y + 7, x + 22, y + 8);
+      } else {
+        graphics.fillStyle(0xffdf70, 0.72);
+        graphics.fillRect(x + 15, y + 20, 2, 2);
+        graphics.lineStyle(2, outlineColor, 1);
+        graphics.strokeLineShape(new Phaser.Geom.Line(x + 17, y + 8, x + 17, y + 1));
+        graphics.fillStyle(bannerColor, 1);
+        graphics.fillTriangle(x + 18, y + 2, x + 28, y + 5, x + 18, y + 9);
+        graphics.fillStyle(0xffffff, 0.5);
+        graphics.fillCircle(x + 20, y + 4, 1);
+      }
+      graphics.lineStyle(1, outlineColor, eliminated ? 0.48 : 0.8);
+      graphics.strokeRoundedRect(x + 3, y + 14, 26, 11, 3);
+      return;
+    }
+
+    // Accepted pre-overhaul castle retained for the Prototype theme.
+    const color = eliminated ? palette.defeatedCastle : factionColor;
+    graphics.fillStyle(palette.castleShadow, 0.18);
+    graphics.fillEllipse(x + 16, y + 27, 27, 7);
+    graphics.fillStyle(color, 1);
+    graphics.fillRect(x + 3, y + 11, this.tileSize - 6, this.tileSize - 12);
+    graphics.fillRect(x + 4, y + 6, 7, 9);
+    graphics.fillRect(x + this.tileSize - 11, y + 6, 7, 9);
+    graphics.fillStyle(palette.castleWindow, eliminated ? 0.3 : 0.9);
+    graphics.fillRect(x + 7, y + 16, 4, 5);
+    graphics.fillRect(x + 19, y + 16, 4, 5);
+    graphics.lineStyle(2, palette.castleOutline, eliminated ? 0.25 : 0.75);
+    graphics.strokeRect(x + 3, y + 11, this.tileSize - 6, this.tileSize - 12);
+  }
+
+  private drawShowcaseCrater(graphics: Phaser.GameObjects.Graphics, position: Position): void {
+    const x = (position.x + 0.5) * this.tileSize;
+    const y = (position.y + 0.5) * this.tileSize;
+    if (activeBoardTheme.terrainStyle === "storybook") {
+      this.drawStorybookCrater(graphics, x, y, 1);
+      return;
+    }
+    graphics.fillStyle(0x3b2a22, 0.88);
+    graphics.fillEllipse(x, y, 24, 12);
+    graphics.fillStyle(0x171b1c, 0.72);
+    graphics.fillEllipse(x, y + 1, 15, 7);
+    graphics.lineStyle(2, 0x8b6542, 0.78);
+    graphics.strokeEllipse(x, y, 24, 12);
+  }
+
+  private drawShowcaseSplash(graphics: Phaser.GameObjects.Graphics, position: Position): void {
+    const x = (position.x + 0.5) * this.tileSize;
+    const y = (position.y + 0.5) * this.tileSize;
+    if (activeBoardTheme.terrainStyle === "storybook") {
+      this.drawStorybookSplash(graphics, x, y, 1, 1);
+      return;
+    }
+    graphics.lineStyle(3, 0xd7fbff, 0.85);
+    graphics.strokeEllipse(x, y + 5, 28, 9);
+    graphics.strokeLineShape(new Phaser.Geom.Line(x, y + 4, x - 7, y - 11));
+    graphics.strokeLineShape(new Phaser.Geom.Line(x + 3, y + 4, x + 10, y - 8));
+    graphics.fillStyle(0xd7fbff, 0.75);
+    graphics.fillCircle(x - 8, y - 12, 2.5);
+    graphics.fillCircle(x + 11, y - 9, 2.5);
+  }
+
+  private drawStorybookCrater(
+    graphics: Phaser.GameObjects.Graphics,
+    x: number,
+    y: number,
+    alpha: number,
+  ): void {
+    // Rounded earth layers are friendlier than the former harsh black hole.
+    graphics.fillStyle(0x6e5032, 0.3 * alpha);
+    graphics.fillEllipse(x, y + 4, 27, 14);
+    graphics.fillStyle(0x91683c, 0.92 * alpha);
+    graphics.fillEllipse(x, y + 3, 23, 11);
+    graphics.fillStyle(0x513b2a, 0.86 * alpha);
+    graphics.fillEllipse(x + 1, y + 4, 15, 6.5);
+    graphics.fillStyle(0xc4995a, 0.78 * alpha);
+    graphics.fillCircle(x - 10, y + 1, 2.1);
+    graphics.fillCircle(x + 10, y + 5, 1.7);
+    graphics.fillStyle(0x4d6738, 0.62 * alpha);
+    graphics.fillCircle(x - 7, y - 1, 1.2);
+    graphics.fillCircle(x + 8, y - 2, 1.1);
+    graphics.lineStyle(1, 0x4d3827, 0.6 * alpha);
+    graphics.strokeEllipse(x, y + 3, 24, 12);
+  }
+
+  private drawStorybookSplash(
+    graphics: Phaser.GameObjects.Graphics,
+    x: number,
+    y: number,
+    alpha: number,
+    size: number,
+  ): void {
+    graphics.lineStyle(2.5, 0xe4fbff, 0.86 * alpha);
+    graphics.strokeEllipse(x, y + 5, (25 + size * 7), 8 + size * 3);
+    graphics.lineStyle(1.5, 0x78d5e6, 0.78 * alpha);
+    graphics.strokeEllipse(x, y + 5, 14 + size * 5, 5 + size * 2);
+    graphics.fillStyle(0xd8f8fb, 0.84 * alpha);
+    graphics.fillTriangle(x - 7 * size, y + 4, x - 3 * size, y - 10 * size, x + 1 * size, y + 4);
+    graphics.fillTriangle(x + 1 * size, y + 4, x + 7 * size, y - 13 * size, x + 11 * size, y + 5);
+    graphics.fillCircle(x - 9 * size, y - 7 * size, 2.1 * size);
+    graphics.fillCircle(x + 11 * size, y - 9 * size, 2.4 * size);
+  }
+
+  private drawStorybookSnowImpact(
+    graphics: Phaser.GameObjects.Graphics,
+    x: number,
+    y: number,
+    alpha: number,
+    burst: number,
+  ): void {
+    graphics.fillStyle(0xb5cdc9, 0.34 * alpha);
+    graphics.fillEllipse(x, y + 5, 24 + burst * 10, 9 + burst * 4);
+    graphics.fillStyle(0xf6fcf7, 0.8 * alpha);
+    graphics.fillCircle(x, y + 1, 5 + burst * 8);
+    for (let flake = 0; flake < 8; flake += 1) {
+      const angle = (Math.PI * 2 * flake) / 8 + burst * 0.5;
+      graphics.fillCircle(
+        x + Math.cos(angle) * (7 + burst * 16),
+        y - 2 + Math.sin(angle) * (6 + burst * 12),
+        1.5 + (flake % 2) * 0.8,
+      );
+    }
+    graphics.lineStyle(1, 0x9abbb6, 0.72 * alpha);
+    graphics.strokeEllipse(x, y + 5, 22 + burst * 9, 10 + burst * 4);
+  }
+
+  private drawStorybookIceImpact(
+    graphics: Phaser.GameObjects.Graphics,
+    x: number,
+    y: number,
+    alpha: number,
+    burst: number,
+  ): void {
+    graphics.fillStyle(0xdff6f7, 0.56 * alpha);
+    graphics.fillCircle(x, y + 2, 5 + burst * 7);
+    graphics.lineStyle(2, 0x84c2cb, 0.88 * alpha);
+    for (let crack = 0; crack < 7; crack += 1) {
+      const angle = (Math.PI * 2 * crack) / 7 + 0.22;
+      const middle = 6 + burst * 4;
+      const outer = 13 + burst * 14;
+      graphics.strokeLineShape(new Phaser.Geom.Line(
+        x + Math.cos(angle) * middle,
+        y + Math.sin(angle) * middle,
+        x + Math.cos(angle) * outer,
+        y + Math.sin(angle) * outer,
+      ));
+    }
+    graphics.fillStyle(0xf5ffff, 0.82 * alpha);
+    for (let shard = 0; shard < 5; shard += 1) {
+      const angle = (Math.PI * 2 * shard) / 5 - 0.4;
+      const shardX = x + Math.cos(angle) * (10 + burst * 13);
+      const shardY = y + Math.sin(angle) * (7 + burst * 10);
+      graphics.fillTriangle(shardX - 2, shardY + 3, shardX + 3, shardY + 2, shardX + 1, shardY - 4);
+    }
+  }
+
   private drawTreasure(graphics: Phaser.GameObjects.Graphics, treasure: TreasureChest, alpha = 1): void {
     const x = treasure.position.x * this.tileSize;
     const y = treasure.position.y * this.tileSize;
+    if (activeBoardTheme.terrainStyle === "storybook") {
+      // Keep the exact, beloved coffer geometry from the established board
+      // icon.  Only its warmer wood and little lid highlight are storybook.
+      graphics.fillStyle(0x4e371e, 0.25 * alpha);
+      graphics.fillEllipse(x + 15, y + 25, 19, 5);
+      graphics.fillStyle(0x885522, alpha);
+      graphics.fillRect(x + 6, y + 13, 18, 11);
+      graphics.fillStyle(0xc77b33, alpha);
+      graphics.fillRect(x + 6, y + 10, 18, 5);
+      graphics.fillStyle(0xe2a051, alpha * 0.58);
+      graphics.fillRect(x + 8, y + 11, 14, 1.5);
+      graphics.fillStyle(0xffdf70, alpha);
+      graphics.lineStyle(2, 0xffdf70, alpha);
+      graphics.strokeRect(x + 6, y + 13, 18, 11);
+      graphics.strokeLineShape(new Phaser.Geom.Line(x + 15, y + 10, x + 15, y + 24));
+      graphics.fillCircle(x + 15, y + 14, 3);
+      graphics.fillStyle(0xfff4b8, alpha * 0.72);
+      graphics.fillCircle(x + 14, y + 13, 0.9);
+      return;
+    }
     graphics.fillStyle(0x4e371e, 0.25 * alpha);
     graphics.fillEllipse(x + 15, y + 25, 19, 5);
     graphics.fillStyle(0x8c5b23, alpha);
@@ -1004,6 +1602,49 @@ class BoardScene extends Phaser.Scene {
   private drawHorn(graphics: Phaser.GameObjects.Graphics, position: Position, alpha = 1): void {
     const x = position.x * this.tileSize;
     const y = position.y * this.tileSize;
+    if (activeBoardTheme.terrainStyle === "storybook") {
+      // A filled, curled horn silhouette reads more clearly than a collection
+      // of lines: broad drinking rim, ivory body, then a narrow hooked tip.
+      graphics.fillStyle(0x5b3a22, alpha * 0.22);
+      graphics.fillEllipse(x + 17, y + 25, 19, 5);
+      graphics.fillStyle(0x62411f, alpha);
+      graphics.fillPoints([
+        new Phaser.Math.Vector2(x + 8, y + 7),
+        new Phaser.Math.Vector2(x + 19, y + 6),
+        new Phaser.Math.Vector2(x + 20, y + 12),
+        new Phaser.Math.Vector2(x + 19, y + 17),
+        new Phaser.Math.Vector2(x + 22, y + 22),
+        new Phaser.Math.Vector2(x + 26, y + 21),
+        new Phaser.Math.Vector2(x + 27, y + 24),
+        new Phaser.Math.Vector2(x + 23, y + 27),
+        new Phaser.Math.Vector2(x + 17, y + 24),
+        new Phaser.Math.Vector2(x + 13, y + 18),
+        new Phaser.Math.Vector2(x + 10, y + 12),
+      ], true);
+      graphics.fillStyle(0xf0d386, alpha);
+      graphics.fillPoints([
+        new Phaser.Math.Vector2(x + 10, y + 9),
+        new Phaser.Math.Vector2(x + 17, y + 8),
+        new Phaser.Math.Vector2(x + 18, y + 13),
+        new Phaser.Math.Vector2(x + 17, y + 17),
+        new Phaser.Math.Vector2(x + 20, y + 22),
+        new Phaser.Math.Vector2(x + 24, y + 22),
+        new Phaser.Math.Vector2(x + 24, y + 24),
+        new Phaser.Math.Vector2(x + 22, y + 25),
+        new Phaser.Math.Vector2(x + 19, y + 22),
+        new Phaser.Math.Vector2(x + 15, y + 16),
+        new Phaser.Math.Vector2(x + 12, y + 11),
+      ], true);
+      graphics.fillStyle(0xffe8a3, alpha * 0.68);
+      graphics.fillTriangle(x + 12, y + 10, x + 16, y + 9, x + 16, y + 16);
+      graphics.fillStyle(0x85542a, alpha);
+      graphics.fillRoundedRect(x + 9, y + 7, 10, 5, 1.5);
+      graphics.fillStyle(0xb77b32, alpha);
+      graphics.fillRect(x + 11, y + 8, 6, 2);
+      graphics.fillStyle(0xffdf70, alpha * 0.86);
+      graphics.fillCircle(x + 22, y + 24, 1.2);
+      return;
+    }
     graphics.fillStyle(0x5b3a22, 0.2 * alpha);
     graphics.fillEllipse(x + 15, y + 25, 14, 4);
     graphics.fillStyle(0xe6b64d, alpha);
@@ -1327,12 +1968,14 @@ class BoardScene extends Phaser.Scene {
       treasure: { text: "Treasure!", color: 0xffdf70 },
       deposit: { text: "Gold banked!", color: 0xffdf70 },
       boarding: { text: "All aboard!", color: 0x9ce5ee },
+      disembarking: { text: "Ashore!", color: 0x9ce5ee },
       drinking: { text: "Drank the horn!", color: 0xf4c34d },
     };
     const presentation = labels[arrival.kind];
     const x = (arrival.position.x + 0.5) * this.tileSize;
     const y = (arrival.position.y + 0.5) * this.tileSize;
     const alpha = 1 - arrival.progress * 0.8;
+    const pulse = Math.sin(arrival.progress * Math.PI);
     if (arrival.kind === "castle" && gameState) {
       const boardWidth = gameState.width * this.tileSize;
       const boardHeight = gameState.height * this.tileSize;
@@ -1365,8 +2008,53 @@ class BoardScene extends Phaser.Scene {
         strokeThickness: 4,
       }).setOrigin(0.5).setAlpha(celebrationAlpha).setDepth(50);
     }
-    graphics.lineStyle(3, presentation.color, alpha);
-    graphics.strokeCircle(x, y, 8 + arrival.progress * 18);
+    if (activeBoardTheme.terrainStyle === "storybook") {
+      if (arrival.kind === "treasure") {
+        // A burst of warm, coin-like glints makes a pickup feel rewarding.
+        graphics.fillStyle(0xffdf70, 0.82 * alpha);
+        for (let coin = 0; coin < 6; coin += 1) {
+          const angle = (Math.PI * 2 * coin) / 6 + arrival.progress;
+          graphics.fillCircle(x + Math.cos(angle) * (6 + pulse * 13), y + Math.sin(angle) * (6 + pulse * 13), 2);
+        }
+        graphics.fillStyle(0xfff4b8, 0.68 * alpha);
+        graphics.fillCircle(x, y, 5 + pulse * 5);
+      } else if (arrival.kind === "deposit") {
+        graphics.fillStyle(0xffdf70, 0.8 * alpha);
+        for (let coin = 0; coin < 5; coin += 1) {
+          graphics.fillCircle(x - 8 + coin * 4, y + 8 - pulse * (8 + (coin % 2) * 4), 2.1);
+        }
+        graphics.lineStyle(2, 0xfff1ad, 0.7 * alpha);
+        graphics.strokeEllipse(x, y + 8, 24 + pulse * 10, 8 + pulse * 3);
+      } else if (arrival.kind === "boarding" || arrival.kind === "disembarking") {
+        const direction = arrival.kind === "boarding" ? 1 : -1;
+        graphics.lineStyle(3, 0xf4e4be, 0.82 * alpha);
+        graphics.strokeLineShape(new Phaser.Geom.Line(x - 13 * direction, y + 7, x + 12 * direction, y - 7));
+        graphics.fillStyle(0x9ce5ee, 0.68 * alpha);
+        graphics.fillTriangle(x + 9 * direction, y - 9, x + 15 * direction, y - 4, x + 8 * direction, y - 1);
+        graphics.lineStyle(2, 0xd7fbff, 0.66 * alpha);
+        graphics.strokeEllipse(x, y + 10, 22 + pulse * 10, 6 + pulse * 3);
+      } else if (arrival.kind === "drinking") {
+        graphics.fillStyle(0x7c4b9c, 0.46 * alpha);
+        graphics.fillCircle(x, y, 8 + pulse * 11);
+        graphics.fillStyle(0xf0d386, 0.88 * alpha);
+        graphics.fillTriangle(x - 4, y - 6, x + 4, y - 6, x + 7, y + 5);
+        graphics.fillCircle(x + 6, y + 5, 3);
+        graphics.fillStyle(0xffdf70, 0.76 * alpha);
+        graphics.fillCircle(x - 8, y - 9 - pulse * 7, 1.7);
+        graphics.fillCircle(x + 7, y - 13 - pulse * 5, 1.4);
+      } else if (arrival.kind === "converted") {
+        graphics.fillStyle(0x9ce5ee, 0.32 * alpha);
+        graphics.fillCircle(x, y, 10 + pulse * 15);
+        graphics.lineStyle(2, 0xfff2ba, 0.85 * alpha);
+        graphics.strokeCircle(x, y, 9 + pulse * 12);
+      } else {
+        graphics.lineStyle(3, presentation.color, alpha);
+        graphics.strokeCircle(x, y, 8 + arrival.progress * 18);
+      }
+    } else {
+      graphics.lineStyle(3, presentation.color, alpha);
+      graphics.strokeCircle(x, y, 8 + arrival.progress * 18);
+    }
     this.add.text(x, y - 19 - arrival.progress * 12, presentation.text, {
       fontFamily: "Arial, sans-serif",
       fontSize: arrival.kind === "castle" ? "18px" : "14px",
@@ -1400,6 +2088,18 @@ class BoardScene extends Phaser.Scene {
     const x = (clash.to.x + 0.5) * this.tileSize;
     const y = (clash.to.y + 0.5) * this.tileSize;
     const sparkAlpha = Math.max(0, impact * (1 - clash.progress * 0.35));
+    if (activeBoardTheme.terrainStyle === "storybook") {
+      // A compact comic impact cloud sits behind the crossed weapons, adding
+      // punch without hiding either Viking's distinct silhouette.
+      graphics.fillStyle(0xffd978, 0.26 * sparkAlpha);
+      graphics.fillCircle(x, y, 10 + impact * 9);
+      graphics.fillStyle(0xfff2ba, 0.78 * sparkAlpha);
+      graphics.fillCircle(x, y, 3 + impact * 4);
+      for (let spark = 0; spark < 8; spark += 1) {
+        const angle = (Math.PI * 2 * spark) / 8 + clash.progress * 2.2;
+        graphics.fillCircle(x + Math.cos(angle) * (10 + impact * 10), y + Math.sin(angle) * (10 + impact * 10), 1.5 + impact);
+      }
+    }
     graphics.lineStyle(3, 0xffe4a0, sparkAlpha);
     graphics.strokeLineShape(new Phaser.Geom.Line(x - 11, y - 11, x + 11, y + 11));
     graphics.strokeLineShape(new Phaser.Geom.Line(x + 11, y - 11, x - 11, y + 11));
@@ -1457,6 +2157,13 @@ class BoardScene extends Phaser.Scene {
     graphics.fillCircle(toX, toY, 9 + pulse * 13);
     graphics.lineStyle(3, 0xf4c34d, 0.9 * pulse);
     graphics.strokeCircle(toX, toY, 11 + pulse * 12);
+    if (activeBoardTheme.terrainStyle === "storybook") {
+      graphics.fillStyle(0x9ce5ee, 0.72 * pulse);
+      graphics.fillCircle(toX - 7, toY - 11 - pulse * 5, 2.2);
+      graphics.fillCircle(toX + 7, toY - 14 - pulse * 7, 1.8);
+      graphics.lineStyle(2, 0xf5f0c8, 0.82 * pulse);
+      graphics.strokeEllipse(toX, toY + 2, 20 + pulse * 12, 8 + pulse * 5);
+    }
   }
 
   private drawCastleAssault(
@@ -1483,19 +2190,25 @@ class BoardScene extends Phaser.Scene {
     const shake = progress > 0.18 ? Math.sin(progress * Math.PI * 18) * 2.2 * impactPulse : 0;
     const drawX = castleX + shake;
     const castleColor = defender?.color ?? 0x6d7370;
-    graphics.fillStyle(0x253c3f, 0.24);
-    graphics.fillEllipse(drawX + 16, castleY + 27, 29, 8);
-    graphics.fillStyle(castleColor, 1);
-    graphics.fillRect(drawX + 3, castleY + 11, this.tileSize - 6, this.tileSize - 12);
-    graphics.fillRect(drawX + 4, castleY + 6, 7, 9);
-    graphics.fillRect(drawX + this.tileSize - 11, castleY + 6, 7, 9);
-    graphics.fillStyle(0xf5e5bd, 0.9);
-    graphics.fillRect(drawX + 7, castleY + 16, 4, 5);
-    graphics.fillRect(drawX + 19, castleY + 16, 4, 5);
-    graphics.fillStyle(castleColor, 1);
-    graphics.fillTriangle(drawX + 12, castleY + 5, drawX + 18, castleY + 7, drawX + 12, castleY + 9);
-    graphics.lineStyle(2, 0x4d3a2c, 0.85);
-    graphics.strokeRect(drawX + 3, castleY + 11, this.tileSize - 6, this.tileSize - 12);
+    if (activeBoardTheme.terrainStyle === "storybook") {
+      this.drawCastleArtwork(graphics, assault.to, castleColor, false, shake);
+    } else {
+      // Prototype retains its accepted siege icon while the alternative
+      // theme redraws its own hill fort above.
+      graphics.fillStyle(0x253c3f, 0.24);
+      graphics.fillEllipse(drawX + 16, castleY + 27, 29, 8);
+      graphics.fillStyle(castleColor, 1);
+      graphics.fillRect(drawX + 3, castleY + 11, this.tileSize - 6, this.tileSize - 12);
+      graphics.fillRect(drawX + 4, castleY + 6, 7, 9);
+      graphics.fillRect(drawX + this.tileSize - 11, castleY + 6, 7, 9);
+      graphics.fillStyle(0xf5e5bd, 0.9);
+      graphics.fillRect(drawX + 7, castleY + 16, 4, 5);
+      graphics.fillRect(drawX + 19, castleY + 16, 4, 5);
+      graphics.fillStyle(castleColor, 1);
+      graphics.fillTriangle(drawX + 12, castleY + 5, drawX + 18, castleY + 7, drawX + 12, castleY + 9);
+      graphics.lineStyle(2, 0x4d3a2c, 0.85);
+      graphics.strokeRect(drawX + 3, castleY + 11, this.tileSize - 6, this.tileSize - 12);
+    }
 
     this.drawUnit(graphics, { ...assault.attacker, position: attackerPosition, moved: false });
 
@@ -1600,6 +2313,18 @@ class BoardScene extends Phaser.Scene {
     const burst = Math.min(1, shot.progress * 3.2);
 
     if (shot.impact === "water") {
+      if (activeBoardTheme.terrainStyle === "storybook") {
+        this.drawStorybookSplash(graphics, x, y, fade, burst);
+        this.add.text(x, y - 28 - shot.progress * 10, presentation.text, {
+          fontFamily: "Arial, sans-serif",
+          fontSize: "14px",
+          fontStyle: "bold",
+          color: `#${presentation.color.toString(16).padStart(6, "0")}`,
+          stroke: "#17323a",
+          strokeThickness: 4,
+        }).setOrigin(0.5).setAlpha(fade).setDepth(25);
+        return;
+      }
       const ripple = 8 + burst * 22;
       graphics.lineStyle(3, 0xd7fbff, 0.82 * fade);
       graphics.strokeCircle(x, y + 4, ripple);
@@ -1643,6 +2368,35 @@ class BoardScene extends Phaser.Scene {
     // A small irregular crater replaces the old debug-like black X. It forms
     // quickly at the true landing square and fades with the rest of the impact.
     const craterFade = Math.min(1, shot.progress * 7) * Math.max(0, 1 - shot.progress);
+    if (activeBoardTheme.terrainStyle === "storybook") {
+      const landedTerrain = gameState ? terrainAt(gameState, shot.landedAt) : "land";
+      const frozenRows = gameState ? Math.ceil((gameState.height * gameState.winterPhase) / WINTER_PHASES) : 0;
+      const snowCoveredLand = landedTerrain === "land" && shot.landedAt.y < frozenRows;
+      const coldImpact = shot.impact !== "castle" && (landedTerrain === "ice" || snowCoveredLand);
+      if (shot.impact !== "castle" && landedTerrain === "ice") {
+        this.drawStorybookIceImpact(graphics, x, y, craterFade, burst);
+      } else if (shot.impact !== "castle" && snowCoveredLand) {
+        this.drawStorybookSnowImpact(graphics, x, y, craterFade, burst);
+      } else {
+        this.drawStorybookCrater(graphics, x, y, craterFade);
+      }
+      if (!coldImpact) {
+        graphics.fillStyle(0xffd174, 0.46 * fade);
+        graphics.fillCircle(x, y, 4 + burst * 12);
+        graphics.fillStyle(0x759096, 0.42 * fade);
+        graphics.fillCircle(x - 8 - burst * 4, y - 5 - burst * 9, 5 + burst * 2);
+        graphics.fillCircle(x + 7 + burst * 4, y - 9 - burst * 11, 6 + burst * 3);
+      }
+      this.add.text(x, y - 28 - shot.progress * 10, presentation.text, {
+        fontFamily: "Arial, sans-serif",
+        fontSize: "14px",
+        fontStyle: "bold",
+        color: `#${presentation.color.toString(16).padStart(6, "0")}`,
+        stroke: "#17323a",
+        strokeThickness: 4,
+      }).setOrigin(0.5).setAlpha(fade).setDepth(25);
+      return;
+    }
     graphics.fillStyle(0x3b2a22, 0.88 * craterFade);
     graphics.fillEllipse(x, y + 3, 23, 13);
     graphics.fillStyle(0x171b1c, 0.72 * craterFade);
@@ -1745,6 +2499,35 @@ class BoardScene extends Phaser.Scene {
     const y = broken.unit.position.y * this.tileSize;
     const alpha = Math.max(0.08, 1 - broken.progress * 0.9);
     const settle = Math.min(1, broken.progress * 4);
+    if (activeBoardTheme.terrainStyle === "storybook") {
+      // A cheerful but unmistakably ruined siege engine: fallen wheel,
+      // snapped timber and a loosening faction sling rather than a dark blob.
+      graphics.fillStyle(0x283b42, 0.24 * alpha);
+      graphics.fillEllipse(x + 30, y + 27, 50, 8);
+      graphics.fillStyle(0x4b3020, alpha);
+      graphics.fillCircle(x + 13, y + 23, 7);
+      graphics.fillStyle(0xc68843, alpha);
+      graphics.fillCircle(x + 13, y + 23, 4);
+      graphics.fillStyle(0x4b3020, alpha);
+      graphics.fillCircle(x + 47, y + 25, 5.5);
+      graphics.fillStyle(0x8b542b, alpha);
+      graphics.fillRoundedRect(x + 8, y + 18, 36, 6, 2);
+      graphics.fillStyle(0xdd9f52, alpha * 0.65);
+      graphics.fillRect(x + 12, y + 19, 27, 2);
+      graphics.lineStyle(4, 0x5d3822, alpha);
+      graphics.strokeLineShape(new Phaser.Geom.Line(x + 22, y + 20, x + 11, y + 8));
+      graphics.strokeLineShape(new Phaser.Geom.Line(x + 28, y + 20, x + 45, y + 7));
+      const slingColor = gameState?.players.find((player) => player.id === broken.unit.playerId)?.color ?? 0x777777;
+      graphics.fillStyle(slingColor, alpha * 0.72);
+      graphics.fillTriangle(x + 31, y + 14, x + 45, y + 10, x + 40, y + 18);
+      graphics.lineStyle(2, 0xead1a0, alpha * 0.84);
+      graphics.strokeLineShape(new Phaser.Geom.Line(x + 26, y + 13, x + 32, y + 19));
+      graphics.strokeLineShape(new Phaser.Geom.Line(x + 32, y + 13, x + 26, y + 19));
+      graphics.fillStyle(0x707b7f, alpha * (1 - settle * 0.3));
+      graphics.fillCircle(x + 27, y + 8 - settle * 6, 5 + settle * 2);
+      graphics.fillCircle(x + 36, y + 4 - settle * 8, 4 + settle * 2);
+      return;
+    }
     graphics.fillStyle(0x2e2924, 0.25 * alpha);
     graphics.fillEllipse(x + 30, y + 26, 50, 8);
     graphics.fillStyle(0x3d2a20, alpha);
@@ -1770,146 +2553,390 @@ class BoardScene extends Phaser.Scene {
     graphics.strokeLineShape(new Phaser.Geom.Line(x + 38, y + 29, x + 55, y + 29));
   }
 
+  /** The accepted pre-overhaul Viking art, retained for the Prototype theme. */
+  private drawPrototypeViking(
+    graphics: Phaser.GameObjects.Graphics,
+    x: number,
+    y: number,
+    playerColor: number,
+    veteran: boolean,
+    alpha: number,
+  ): void {
+    graphics.fillStyle(0x243b48, alpha);
+    graphics.fillEllipse(x + 15, y + 27, 17, 5);
+    if (veteran) {
+      graphics.fillStyle(0xf1c18d, alpha);
+      graphics.fillCircle(x + 14, y + 8, 6);
+      graphics.fillTriangle(x + 5, y + 25, x + 23, y + 25, x + 14, y + 12);
+      graphics.fillRect(x + 8, y + 15, 13, 8);
+      graphics.fillStyle(0x8b4d32, alpha);
+      graphics.fillTriangle(x + 9, y + 10, x + 19, y + 10, x + 14, y + 16);
+      graphics.fillStyle(playerColor, alpha);
+      graphics.fillRect(x + 7, y + 20, 15, 4);
+      graphics.fillRect(x + 8, y + 6, 12, 2);
+      graphics.lineStyle(3, 0x573c2a, alpha);
+      graphics.strokeLineShape(new Phaser.Geom.Line(x + 20, y + 25, x + 27, y + 5));
+      graphics.fillStyle(0xd8e0df, alpha);
+      graphics.fillTriangle(x + 23, y + 4, x + 30, y + 1, x + 28, y + 9);
+      graphics.fillTriangle(x + 23, y + 4, x + 18, y + 1, x + 20, y + 9);
+      graphics.lineStyle(1, 0x39464b, alpha);
+      graphics.strokeTriangle(x + 23, y + 4, x + 30, y + 1, x + 28, y + 9);
+      return;
+    }
+    graphics.fillStyle(0xf1c18d, alpha);
+    graphics.fillCircle(x + 15, y + 10, 6);
+    graphics.fillStyle(0xf4ead0, alpha);
+    graphics.fillTriangle(x + 10, y + 8, x + 4, y + 5, x + 8, y + 12);
+    graphics.fillTriangle(x + 20, y + 8, x + 26, y + 5, x + 22, y + 12);
+    graphics.fillStyle(0x485565, alpha);
+    graphics.fillRect(x + 9, y + 4, 12, 5);
+    graphics.fillTriangle(x + 8, y + 9, x + 22, y + 9, x + 15, y + 2);
+    graphics.fillStyle(0xd5e0df, alpha);
+    graphics.fillRect(x + 13, y + 5, 4, 2);
+    graphics.fillStyle(playerColor, alpha);
+    graphics.fillTriangle(x + 7, y + 26, x + 23, y + 26, x + 15, y + 13);
+    graphics.fillCircle(x + 21, y + 20, 5);
+    graphics.lineStyle(1, 0xf4e4be, alpha);
+    graphics.strokeCircle(x + 21, y + 20, 5);
+    graphics.lineStyle(2, 0x573c2a, alpha);
+    graphics.strokeLineShape(new Phaser.Geom.Line(x + 9, y + 23, x + 4, y + 10));
+  }
+
   private drawUnit(graphics: Phaser.GameObjects.Graphics, unit: Unit, alphaOverride?: number): void {
     if (!gameState) return;
     const player = gameState.players.find((candidate) => candidate.id === unit.playerId);
-    if (!player) return;
+    const playerOption = PLAYER_OPTIONS.find((candidate) => candidate.id === unit.playerId);
+    if (!player && !playerOption) return;
+    const playerColor = player?.color ?? Number.parseInt(playerOption!.color.slice(1), 16);
+    const displayUnits = graphicsShowcaseActive ? this.showcaseUnits : gameState.units;
+    const displayTreasures = graphicsShowcaseActive ? this.showcaseTreasures : gameState.treasures;
     const x = unit.position.x * this.tileSize;
     const y = unit.position.y * this.tileSize;
     const alpha = alphaOverride ?? (unit.moved ? 0.52 : 1);
-    graphics.fillStyle(player.color, alpha);
+    graphics.fillStyle(playerColor, alpha);
     graphics.lineStyle(2, 0x283d40, 0.9);
 
     if (unit.type === "soldier") {
-      graphics.fillStyle(0x243b48, alpha);
-      graphics.fillEllipse(x + 15, y + 27, 17, 5);
-      if (unit.veteran) {
-        // Veterans trade the ordinary tunic and shield for a broad bare chest,
-        // faction-coloured war paint and an oversized axe silhouette.
-        graphics.fillStyle(0xf1c18d, alpha);
-        graphics.fillCircle(x + 14, y + 8, 6);
-        graphics.fillTriangle(x + 5, y + 25, x + 23, y + 25, x + 14, y + 12);
-        graphics.fillRect(x + 8, y + 15, 13, 8);
-        graphics.fillStyle(0x8b4d32, alpha);
-        graphics.fillTriangle(x + 9, y + 10, x + 19, y + 10, x + 14, y + 16);
-        graphics.fillStyle(player.color, alpha);
-        graphics.fillRect(x + 7, y + 20, 15, 4);
-        graphics.fillRect(x + 8, y + 6, 12, 2);
-        graphics.lineStyle(3, 0x573c2a, alpha);
-        graphics.strokeLineShape(new Phaser.Geom.Line(x + 20, y + 25, x + 27, y + 5));
-        graphics.fillStyle(0xd8e0df, alpha);
-        graphics.fillTriangle(x + 23, y + 4, x + 30, y + 1, x + 28, y + 9);
-        graphics.fillTriangle(x + 23, y + 4, x + 18, y + 1, x + 20, y + 9);
-        graphics.lineStyle(1, 0x39464b, alpha);
-        graphics.strokeTriangle(x + 23, y + 4, x + 30, y + 1, x + 28, y + 9);
+      if (activeBoardTheme.terrainStyle === "prototype") {
+        this.drawPrototypeViking(graphics, x, y, playerColor, Boolean(unit.veteran), alpha);
       } else {
+      // The two land raiders deliberately use different silhouettes rather
+      // than relying on their faction colour. Ordinary Vikings are compact
+      // shield-bearing adventurers; Veterans are broad, bare-chested heroes
+      // with fur, a gold-trimmed helmet and an oversized axe.
+      graphics.fillStyle(0x243b48, alpha * 0.32);
+      graphics.fillEllipse(x + 15, y + 27, unit.veteran ? 21 : 19, unit.veteran ? 6 : 5);
+      if (unit.veteran) {
+        // Veteran: a noticeably wider Viking champion, with a trophy belt,
+        // fur mantle and double-headed axe. Gold trim is intentional: it is
+        // the rank marker when colour contrast is unavailable.
+        graphics.fillStyle(0x7b6758, alpha);
+        graphics.fillCircle(x + 8, y + 17, 7);
+        graphics.fillCircle(x + 21, y + 17, 7);
+        graphics.fillTriangle(x + 5, y + 21, x + 24, y + 21, x + 15, y + 28);
+        graphics.fillStyle(0x503827, alpha);
+        graphics.fillRect(x + 7, y + 23, 6, 5);
+        graphics.fillRect(x + 17, y + 23, 6, 5);
+        graphics.fillStyle(0xf1c18d, alpha);
+        graphics.fillRoundedRect(x + 7, y + 13, 16, 12, 5);
+        graphics.fillCircle(x + 15, y + 8, 6.5);
+        graphics.fillStyle(0xb85f47, alpha);
+        graphics.fillTriangle(x + 8, y + 13, x + 22, y + 13, x + 15, y + 19);
+        graphics.fillStyle(playerColor, alpha);
+        graphics.fillRect(x + 8, y + 19, 14, 3);
+        graphics.fillCircle(x + 15, y + 21, 3);
+        graphics.fillStyle(0x503827, alpha);
+        graphics.fillRect(x + 12, y + 23, 6, 3);
+        graphics.fillStyle(0xf2c84b, alpha);
+        graphics.fillCircle(x + 15, y + 22, 2);
+        // Broad gold-edged helmet and small plume make Veteran rank readable.
+        graphics.fillStyle(0x4f5d68, alpha);
+        graphics.fillRoundedRect(x + 8, y + 3, 14, 7, 4);
+        graphics.fillTriangle(x + 9, y + 6, x + 21, y + 6, x + 15, y);
+        graphics.fillStyle(0xf2c84b, alpha);
+        graphics.fillRect(x + 9, y + 7, 12, 2);
+        graphics.fillCircle(x + 15, y + 4, 1.5);
+        graphics.fillStyle(0xf4ead0, alpha);
+        graphics.fillTriangle(x + 9, y + 6, x + 4, y + 2, x + 7, y + 9);
+        graphics.fillTriangle(x + 21, y + 6, x + 26, y + 2, x + 23, y + 9);
+        graphics.lineStyle(3, 0x593a24, alpha);
+        graphics.strokeLineShape(new Phaser.Geom.Line(x + 23, y + 25, x + 28, y + 4));
+        graphics.fillStyle(0xdce6e6, alpha);
+        graphics.fillTriangle(x + 25, y + 4, x + 30, y, x + 29, y + 9);
+        graphics.fillTriangle(x + 25, y + 4, x + 19, y, x + 21, y + 9);
+        graphics.lineStyle(1, 0x45545b, alpha);
+        graphics.strokeTriangle(x + 25, y + 4, x + 30, y, x + 29, y + 9);
+      } else {
+        // Ordinary Viking: squat, cheerful and instantly readable through a
+        // round faction-coloured shield plus the small axe held at the side.
+        graphics.fillStyle(0x543b2a, alpha);
+        graphics.fillRect(x + 9, y + 24, 5, 4);
+        graphics.fillRect(x + 17, y + 24, 5, 4);
+        graphics.fillStyle(playerColor, alpha);
+        graphics.fillRoundedRect(x + 8, y + 14, 14, 12, 4);
+        graphics.fillTriangle(x + 7, y + 24, x + 23, y + 24, x + 15, y + 28);
         graphics.fillStyle(0xf1c18d, alpha);
         graphics.fillCircle(x + 15, y + 10, 6);
-        // Deliberately playful horned helmets: historical accuracy yields to instant readability.
+        graphics.fillStyle(0x9b5638, alpha);
+        graphics.fillTriangle(x + 10, y + 13, x + 20, y + 13, x + 15, y + 18);
+        // Deliberately playful horned helmets: historical accuracy yields to
+        // instant readability in this light-hearted game.
         graphics.fillStyle(0xf4ead0, alpha);
         graphics.fillTriangle(x + 10, y + 8, x + 4, y + 5, x + 8, y + 12);
         graphics.fillTriangle(x + 20, y + 8, x + 26, y + 5, x + 22, y + 12);
-        graphics.fillStyle(0x485565, alpha);
-        graphics.fillRect(x + 9, y + 4, 12, 5);
+        graphics.fillStyle(0x52616e, alpha);
+        graphics.fillRoundedRect(x + 9, y + 4, 12, 6, 3);
         graphics.fillTriangle(x + 8, y + 9, x + 22, y + 9, x + 15, y + 2);
         graphics.fillStyle(0xd5e0df, alpha);
         graphics.fillRect(x + 13, y + 5, 4, 2);
-        graphics.fillStyle(player.color, alpha);
-        graphics.fillTriangle(x + 7, y + 26, x + 23, y + 26, x + 15, y + 13);
+        // Shield carries the faction colour but its pale rim makes it legible
+        // for players who cannot easily distinguish faction hues.
+        graphics.fillStyle(0x3d2d24, alpha);
+        graphics.fillCircle(x + 21, y + 20, 6);
         graphics.fillCircle(x + 21, y + 20, 5);
-        graphics.lineStyle(1, 0xf4e4be, alpha);
-        graphics.strokeCircle(x + 21, y + 20, 5);
+        graphics.fillStyle(playerColor, alpha);
+        graphics.fillCircle(x + 21, y + 20, 4.5);
+        graphics.lineStyle(1.5, 0xf6dfb1, alpha);
+        graphics.strokeCircle(x + 21, y + 20, 5.5);
+        graphics.fillStyle(0xf4e4be, alpha);
+        graphics.fillCircle(x + 21, y + 20, 1.5);
         graphics.lineStyle(2, 0x573c2a, alpha);
-        graphics.strokeLineShape(new Phaser.Geom.Line(x + 9, y + 23, x + 4, y + 10));
+        graphics.strokeLineShape(new Phaser.Geom.Line(x + 10, y + 24, x + 4, y + 12));
+        graphics.fillStyle(0xd8e0df, alpha);
+        graphics.fillTriangle(x + 3, y + 11, x + 8, y + 10, x + 6, y + 15);
       }
-      if (unit.drunk) {
-        // A large purple-and-gold horn badge keeps drunkenness readable at board scale.
-        graphics.fillStyle(0x7c4b9c, alpha);
-        graphics.fillCircle(x + 24, y + 6, 6);
-        graphics.fillStyle(0xf4c34d, alpha);
-        graphics.fillRect(x + 21, y + 4, 5, 6);
-        graphics.fillTriangle(x + 21, y + 4, x + 26, y + 4, x + 24, y + 1);
-        graphics.lineStyle(1, 0x442755, alpha);
-        graphics.strokeCircle(x + 24, y + 6, 6);
-        graphics.strokeLineShape(new Phaser.Geom.Line(x + 26, y + 7, x + 29, y + 10));
       }
-      if (unit.rage) {
-        // A hot red lightning badge keeps the one-use Berserker bonus visible.
-        graphics.fillStyle(0xd8482e, alpha);
-        graphics.fillCircle(x + 6, y + 6, 6);
-        graphics.fillStyle(0xffdf70, alpha);
-        graphics.fillTriangle(x + 7, y + 1, x + 3, y + 7, x + 7, y + 7);
-        graphics.fillTriangle(x + 5, y + 5, x + 9, y + 5, x + 4, y + 12);
-        graphics.lineStyle(1, 0x5f2118, alpha);
-        graphics.strokeCircle(x + 6, y + 6, 6);
-      }
-      if (unit.shieldWall) {
-        // A cool blue shield badge marks the one-use Catapult protection.
-        graphics.fillStyle(0x497aa3, alpha);
-        graphics.fillCircle(x + 6, y + 18, 6);
-        graphics.fillStyle(0xd8eff7, alpha);
-        graphics.fillPoints([
-          new Phaser.Math.Vector2(x + 2, y + 15),
-          new Phaser.Math.Vector2(x + 10, y + 15),
-          new Phaser.Math.Vector2(x + 9, y + 20),
-          new Phaser.Math.Vector2(x + 6, y + 23),
-          new Phaser.Math.Vector2(x + 3, y + 20),
-        ], true);
-        graphics.lineStyle(1, 0x183f59, alpha);
-        graphics.strokeCircle(x + 6, y + 18, 6);
-      }
-      if (carriedTreasure(gameState, unit.id)) {
-        graphics.fillStyle(0xf4c95d, 1);
-        graphics.fillRect(x + 18, y + 19, 9, 8);
-        graphics.lineStyle(1, 0x5b3516, 1);
-        graphics.strokeRect(x + 18, y + 19, 9, 8);
+      if (activeBoardTheme.terrainStyle === "storybook") {
+        if (unit.drunk) {
+          // Purple medallion with a tiny pale hook: intoxication remains
+          // distinct from every combat and protection state.
+          graphics.fillStyle(0x56356f, alpha);
+          graphics.fillCircle(x + 24, y + 6, 7.8);
+          graphics.fillStyle(0xf0d386, alpha);
+          graphics.fillTriangle(x + 21, y + 3, x + 26, y + 3, x + 27, y + 8);
+          graphics.fillCircle(x + 26, y + 8, 2.3);
+          graphics.fillStyle(0x8b5727, alpha);
+          graphics.fillRect(x + 21, y + 2, 5, 2);
+          graphics.lineStyle(1, 0xe6c976, alpha);
+          graphics.strokeCircle(x + 24, y + 6, 6.5);
+        }
+        if (unit.rage) {
+          // A flame, rather than a lightning bolt, makes Berserker Rage read
+          // as a hot combat state at a glance.
+          graphics.fillStyle(0x8c2c25, alpha);
+          graphics.fillCircle(x + 6, y + 6, 7.8);
+          graphics.fillStyle(0xff7c3d, alpha);
+          graphics.fillTriangle(x + 6, y + 11, x + 2, y + 6, x + 6, y);
+          graphics.fillTriangle(x + 6, y + 11, x + 10, y + 6, x + 7, y + 2);
+          graphics.fillStyle(0xffe277, alpha);
+          graphics.fillTriangle(x + 6, y + 9, x + 5, y + 5, x + 8, y + 7);
+          graphics.lineStyle(1, 0x5f2118, alpha);
+          graphics.strokeCircle(x + 6, y + 6, 6.6);
+        }
+        if (unit.shieldWall) {
+          graphics.fillStyle(0x244e72, alpha);
+          graphics.fillCircle(x + 6, y + 18, 7.8);
+          graphics.fillStyle(0x8fd4ed, alpha);
+          graphics.fillPoints([
+            new Phaser.Math.Vector2(x + 2, y + 14), new Phaser.Math.Vector2(x + 10, y + 14),
+            new Phaser.Math.Vector2(x + 9, y + 20), new Phaser.Math.Vector2(x + 6, y + 23),
+            new Phaser.Math.Vector2(x + 3, y + 20),
+          ], true);
+          graphics.lineStyle(1, 0xe8fbff, alpha);
+          graphics.strokeLineShape(new Phaser.Geom.Line(x + 6, y + 15, x + 6, y + 21));
+        }
+        if (displayTreasures.some((treasure) => treasure.carriedBy === unit.id)) {
+          // The small coffer repeats the accepted board-chest silhouette.
+          graphics.fillStyle(0x6f421e, alpha);
+          graphics.fillRect(x + 17, y + 20, 11, 8);
+          graphics.fillStyle(0xc77b33, alpha);
+          graphics.fillRect(x + 17, y + 18, 11, 3);
+          graphics.lineStyle(1, 0xffdf70, alpha);
+          graphics.strokeRect(x + 17, y + 20, 11, 8);
+          graphics.strokeLineShape(new Phaser.Geom.Line(x + 22.5, y + 18, x + 22.5, y + 28));
+          graphics.fillStyle(0xffdf70, alpha);
+          graphics.fillCircle(x + 22.5, y + 21, 1.1);
+        }
+      } else {
+        // Existing Prototype markers stay untouched for the comparison theme.
+        if (unit.drunk) {
+          graphics.fillStyle(0x7c4b9c, alpha);
+          graphics.fillCircle(x + 24, y + 6, 6);
+          graphics.fillStyle(0xf4c34d, alpha);
+          graphics.fillRect(x + 21, y + 4, 5, 6);
+          graphics.fillTriangle(x + 21, y + 4, x + 26, y + 4, x + 24, y + 1);
+          graphics.lineStyle(1, 0x442755, alpha);
+          graphics.strokeCircle(x + 24, y + 6, 6);
+          graphics.strokeLineShape(new Phaser.Geom.Line(x + 26, y + 7, x + 29, y + 10));
+        }
+        if (unit.rage) {
+          graphics.fillStyle(0xd8482e, alpha);
+          graphics.fillCircle(x + 6, y + 6, 6);
+          graphics.fillStyle(0xffdf70, alpha);
+          graphics.fillTriangle(x + 7, y + 1, x + 3, y + 7, x + 7, y + 7);
+          graphics.fillTriangle(x + 5, y + 5, x + 9, y + 5, x + 4, y + 12);
+          graphics.lineStyle(1, 0x5f2118, alpha);
+          graphics.strokeCircle(x + 6, y + 6, 6);
+        }
+        if (unit.shieldWall) {
+          graphics.fillStyle(0x497aa3, alpha);
+          graphics.fillCircle(x + 6, y + 18, 6);
+          graphics.fillStyle(0xd8eff7, alpha);
+          graphics.fillPoints([
+            new Phaser.Math.Vector2(x + 2, y + 15), new Phaser.Math.Vector2(x + 10, y + 15),
+            new Phaser.Math.Vector2(x + 9, y + 20), new Phaser.Math.Vector2(x + 6, y + 23),
+            new Phaser.Math.Vector2(x + 3, y + 20),
+          ], true);
+          graphics.lineStyle(1, 0x183f59, alpha);
+          graphics.strokeCircle(x + 6, y + 18, 6);
+        }
+        if (displayTreasures.some((treasure) => treasure.carriedBy === unit.id)) {
+          graphics.fillStyle(0xf4c95d, 1);
+          graphics.fillRect(x + 18, y + 19, 9, 8);
+          graphics.lineStyle(1, 0x5b3516, 1);
+          graphics.strokeRect(x + 18, y + 19, 9, 8);
+        }
       }
     } else if (unit.type === "longboat") {
       const centre = { x: x + 15, y: y + 15 };
-      // The hull is intentionally much deeper than the earlier triangular boat,
-      // giving it the unmistakable profile of a small Viking longship.
-      graphics.fillStyle(0x4f301c, alpha);
-      graphics.fillPoints([
-        new Phaser.Math.Vector2(centre.x - 40, centre.y + 10),
-        new Phaser.Math.Vector2(centre.x - 31, centre.y + 24),
-        new Phaser.Math.Vector2(centre.x + 26, centre.y + 24),
-        new Phaser.Math.Vector2(centre.x + 40, centre.y + 15),
-        new Phaser.Math.Vector2(centre.x + 34, centre.y + 9),
-        new Phaser.Math.Vector2(centre.x - 34, centre.y + 8),
-      ], true);
-      graphics.fillStyle(0xc47a35, alpha);
-      graphics.fillRect(centre.x - 33, centre.y + 11, 64, 5);
-      graphics.lineStyle(2, 0x352116, alpha);
-      graphics.strokeLineShape(new Phaser.Geom.Line(centre.x - 38, centre.y + 10, centre.x + 38, centre.y + 11));
-      graphics.strokeLineShape(new Phaser.Geom.Line(centre.x - 29, centre.y + 19, centre.x + 27, centre.y + 20));
-      graphics.lineStyle(3, 0x593a24, alpha);
-      graphics.strokeLineShape(new Phaser.Geom.Line(centre.x, centre.y - 23, centre.x, centre.y + 11));
-      graphics.fillStyle(player.color, alpha);
-      graphics.fillTriangle(centre.x + 2, centre.y - 21, centre.x + 24, centre.y - 7, centre.x + 2, centre.y - 4);
-      graphics.fillStyle(0xfff5d7, alpha);
-      graphics.fillTriangle(centre.x - 2, centre.y - 19, centre.x - 17, centre.y - 8, centre.x - 2, centre.y - 5);
-      graphics.fillStyle(player.color, alpha);
-      for (const shieldX of [-24, -4, 17]) {
-        graphics.fillCircle(centre.x + shieldX, centre.y + 16, 4);
-        graphics.lineStyle(1, 0xf5dfb5, alpha);
-        graphics.strokeCircle(centre.x + shieldX, centre.y + 16, 4);
+      const frozenLongboat = unit.id === "showcase-frozen-boat" || terrainAt(gameState, unit.position) === "ice";
+      if (activeBoardTheme.terrainStyle === "storybook") {
+        // A low-slung, friendly little Viking ship. It deliberately stays
+        // inside more of its three-square footprint than the Prototype boat.
+        graphics.fillStyle(0x243b48, alpha * 0.28);
+        graphics.fillEllipse(centre.x, centre.y + 21, 69, 6);
+        graphics.fillStyle(0x4a2d1c, alpha);
+        graphics.fillPoints([
+          new Phaser.Math.Vector2(centre.x - 39, centre.y + 8),
+          new Phaser.Math.Vector2(centre.x - 29, centre.y + 19),
+          new Phaser.Math.Vector2(centre.x + 28, centre.y + 19),
+          new Phaser.Math.Vector2(centre.x + 39, centre.y + 11),
+          new Phaser.Math.Vector2(centre.x + 32, centre.y + 6),
+          new Phaser.Math.Vector2(centre.x - 33, centre.y + 6),
+        ], true);
+        graphics.fillStyle(0xc9823b, alpha);
+        graphics.fillRoundedRect(centre.x - 31, centre.y + 8, 61, 6, 2);
+        graphics.fillStyle(0xe0a45b, alpha * 0.72);
+        graphics.fillRect(centre.x - 26, centre.y + 9, 48, 1.5);
+        graphics.lineStyle(1, 0x6c3e22, alpha);
+        graphics.strokeLineShape(new Phaser.Geom.Line(centre.x - 30, centre.y + 15, centre.x + 28, centre.y + 15));
+        // A compact square sail is the clearest Viking silhouette.  Cream
+        // canvas and faction-coloured vertical bands keep it playful without
+        // making the boat appreciably taller than its three-square hull.
+        graphics.fillStyle(0x59402b, alpha * 0.34);
+        graphics.fillRect(centre.x - 17, centre.y - 15, 35, 19);
+        graphics.fillStyle(0xfff2ce, alpha);
+        graphics.fillRect(centre.x - 18, centre.y - 17, 36, 19);
+        graphics.fillStyle(playerColor, alpha * 0.88);
+        for (const stripeOffset of [-15, -5, 5, 15]) {
+          graphics.fillRect(centre.x + stripeOffset - 2.5, centre.y - 17, 5, 19);
+        }
+        graphics.lineStyle(1, 0x755039, alpha * 0.72);
+        graphics.strokeRect(centre.x - 18, centre.y - 17, 36, 19);
+        graphics.lineStyle(1, 0xffffff, alpha * 0.34);
+        graphics.strokeLineShape(new Phaser.Geom.Line(centre.x - 17, centre.y - 15, centre.x + 17, centre.y - 15));
+        graphics.lineStyle(3, 0x593a24, alpha);
+        graphics.strokeLineShape(new Phaser.Geom.Line(centre.x, centre.y - 19, centre.x, centre.y + 8));
+        graphics.lineStyle(1, 0x7a5132, alpha * 0.78);
+        graphics.strokeLineShape(new Phaser.Geom.Line(centre.x, centre.y - 16, centre.x - 28, centre.y + 8));
+        graphics.strokeLineShape(new Phaser.Geom.Line(centre.x, centre.y - 16, centre.x + 28, centre.y + 8));
+        graphics.fillStyle(playerColor, alpha);
+        for (const shieldX of [-23, -4, 16]) {
+          graphics.fillCircle(centre.x + shieldX, centre.y + 13, 3.5);
+          graphics.lineStyle(1, 0xf5dfb5, alpha);
+          graphics.strokeCircle(centre.x + shieldX, centre.y + 13, 3.5);
+        }
+        // A small carved dragon curl reads as a Viking prow without gaining
+        // enough height to collide visually with the tile above.
+        graphics.lineStyle(2, 0x4a2d1c, alpha);
+        graphics.strokeLineShape(new Phaser.Geom.Line(centre.x + 37, centre.y + 8, centre.x + 41, centre.y + 2));
+        graphics.strokeCircle(centre.x + 41, centre.y, 3);
+        graphics.fillStyle(0xf2c84b, alpha);
+        graphics.fillCircle(centre.x + 42, centre.y - 1, 0.9);
+        if (frozenLongboat) {
+          // Snow catches on a trapped hull and its sail, while pale ice at
+          // the keel makes it clear this Longboat cannot sail away.
+          graphics.fillStyle(0xf5fbf4, alpha * 0.86);
+          graphics.fillRoundedRect(centre.x - 30, centre.y + 5, 60, 4, 2);
+          graphics.fillRoundedRect(centre.x - 22, centre.y + 8, 17, 2, 1);
+          graphics.fillRoundedRect(centre.x + 7, centre.y + 8, 14, 2, 1);
+          graphics.fillTriangle(centre.x - 16, centre.y - 17, centre.x - 5, centre.y - 17, centre.x - 10, centre.y - 10);
+          graphics.fillTriangle(centre.x - 2, centre.y - 17, centre.x + 7, centre.y - 17, centre.x + 3, centre.y - 11);
+          graphics.fillTriangle(centre.x + 9, centre.y - 17, centre.x + 17, centre.y - 17, centre.x + 13, centre.y - 12);
+          graphics.fillStyle(0xbfe6ea, alpha * 0.82);
+          graphics.fillRoundedRect(centre.x - 37, centre.y + 20, 71, 5, 2.5);
+          graphics.fillRoundedRect(centre.x - 22, centre.y + 24, 35, 3, 1.5);
+          for (const icicleX of [-22, -8, 7, 22]) {
+            graphics.fillTriangle(centre.x + icicleX, centre.y + 9, centre.x + icicleX + 4, centre.y + 9, centre.x + icicleX + 2, centre.y + 14);
+          }
+          graphics.lineStyle(1, 0x8abdc6, alpha * 0.84);
+          graphics.strokeLineShape(new Phaser.Geom.Line(centre.x - 12, centre.y + 21, centre.x - 4, centre.y + 24));
+          graphics.strokeLineShape(new Phaser.Geom.Line(centre.x + 8, centre.y + 21, centre.x + 15, centre.y + 24));
+        }
+      } else {
+        // Accepted pre-overhaul longboat retained for a genuine comparison.
+        graphics.fillStyle(0x4f301c, alpha);
+        graphics.fillPoints([
+          new Phaser.Math.Vector2(centre.x - 40, centre.y + 10),
+          new Phaser.Math.Vector2(centre.x - 31, centre.y + 24),
+          new Phaser.Math.Vector2(centre.x + 26, centre.y + 24),
+          new Phaser.Math.Vector2(centre.x + 40, centre.y + 15),
+          new Phaser.Math.Vector2(centre.x + 34, centre.y + 9),
+          new Phaser.Math.Vector2(centre.x - 34, centre.y + 8),
+        ], true);
+        graphics.fillStyle(0xc47a35, alpha);
+        graphics.fillRect(centre.x - 33, centre.y + 11, 64, 5);
+        graphics.lineStyle(2, 0x352116, alpha);
+        graphics.strokeLineShape(new Phaser.Geom.Line(centre.x - 38, centre.y + 10, centre.x + 38, centre.y + 11));
+        graphics.strokeLineShape(new Phaser.Geom.Line(centre.x - 29, centre.y + 19, centre.x + 27, centre.y + 20));
+        graphics.lineStyle(3, 0x593a24, alpha);
+        graphics.strokeLineShape(new Phaser.Geom.Line(centre.x, centre.y - 23, centre.x, centre.y + 11));
+        graphics.fillStyle(playerColor, alpha);
+        graphics.fillTriangle(centre.x + 2, centre.y - 21, centre.x + 24, centre.y - 7, centre.x + 2, centre.y - 4);
+        graphics.fillStyle(0xfff5d7, alpha);
+        graphics.fillTriangle(centre.x - 2, centre.y - 19, centre.x - 17, centre.y - 8, centre.x - 2, centre.y - 5);
+        graphics.fillStyle(playerColor, alpha);
+        for (const shieldX of [-24, -4, 17]) {
+          graphics.fillCircle(centre.x + shieldX, centre.y + 16, 4);
+          graphics.lineStyle(1, 0xf5dfb5, alpha);
+          graphics.strokeCircle(centre.x + shieldX, centre.y + 16, 4);
+        }
+        graphics.lineStyle(2, 0x4f301c, alpha);
+        graphics.strokeLineShape(new Phaser.Geom.Line(centre.x + 38, centre.y + 11, centre.x + 42, centre.y + 1));
+        graphics.strokeCircle(centre.x + 41, centre.y - 1, 4);
       }
-      graphics.lineStyle(2, 0x4f301c, alpha);
-      graphics.strokeLineShape(new Phaser.Geom.Line(centre.x + 38, centre.y + 11, centre.x + 42, centre.y + 1));
-      graphics.strokeCircle(centre.x + 41, centre.y - 1, 4);
-      const passengers = longboatPassengers(gameState, unit.id);
+      const passengers = displayUnits.filter((candidate) => candidate.type === "soldier" && candidate.embarkedOn === unit.id);
       const crew = passengers.length;
       for (let index = 0; index < crew; index += 1) {
         const crewX = centre.x - 18 + index * 18;
         const passenger = passengers[index]!;
         graphics.fillStyle(0xf1c18d, alpha);
         graphics.fillCircle(crewX, centre.y + 6, 4);
-        graphics.fillStyle(0x4b5661, alpha);
-        graphics.fillRect(crewX - 4, centre.y + 1, 8, 3);
-        graphics.fillTriangle(crewX - 5, centre.y + 3, crewX + 5, centre.y + 3, crewX, centre.y - 2);
-        graphics.fillStyle(0xf4ead0, alpha);
-        graphics.fillTriangle(crewX - 3, centre.y + 3, crewX - 7, centre.y + 1, crewX - 5, centre.y + 5);
-        graphics.fillTriangle(crewX + 3, centre.y + 3, crewX + 7, centre.y + 1, crewX + 5, centre.y + 5);
+        if (activeBoardTheme.terrainStyle === "storybook" && passenger.veteran) {
+          // Gold helmet band plus beard: Veterans remain recognisable while
+          // seated aboard a longboat, even at the small crew scale.
+          graphics.fillStyle(0x4b5661, alpha);
+          graphics.fillRoundedRect(crewX - 4, centre.y + 1, 8, 4, 2);
+          graphics.fillStyle(0xf2c84b, alpha);
+          graphics.fillRect(crewX - 3, centre.y + 3, 6, 1.5);
+          graphics.fillStyle(0x9b5638, alpha);
+          graphics.fillTriangle(crewX - 3, centre.y + 7, crewX + 3, centre.y + 7, crewX, centre.y + 11);
+          graphics.fillStyle(playerColor, alpha);
+          graphics.fillRect(crewX - 5, centre.y + 9, 10, 2);
+        } else {
+          graphics.fillStyle(0x4b5661, alpha);
+          graphics.fillRect(crewX - 4, centre.y + 1, 8, 3);
+          graphics.fillTriangle(crewX - 5, centre.y + 3, crewX + 5, centre.y + 3, crewX, centre.y - 2);
+          graphics.fillStyle(0xf4ead0, alpha);
+          graphics.fillTriangle(crewX - 3, centre.y + 3, crewX - 7, centre.y + 1, crewX - 5, centre.y + 5);
+          graphics.fillTriangle(crewX + 3, centre.y + 3, crewX + 7, centre.y + 1, crewX + 5, centre.y + 5);
+          graphics.fillStyle(playerColor, alpha);
+          graphics.fillCircle(crewX + 5, centre.y + 8, 2);
+        }
+        if (activeBoardTheme.terrainStyle === "storybook" && passenger.drunk) {
+          graphics.fillStyle(0x7c4b9c, alpha);
+          graphics.fillCircle(crewX - 5, centre.y - 3, 2.5);
+        }
         if (passenger.rage) {
           graphics.fillStyle(0xffdf70, alpha);
           graphics.fillTriangle(crewX - 2, centre.y - 5, crewX + 2, centre.y - 1, crewX - 1, centre.y - 1);
@@ -1923,7 +2950,7 @@ class BoardScene extends Phaser.Scene {
         }
       }
       const carriedGold = passengers.reduce(
-        (total, passenger) => total + (carriedTreasure(gameState!, passenger.id)?.value ?? 0),
+        (total, passenger) => total + (displayTreasures.find((treasure) => treasure.carriedBy === passenger.id)?.value ?? 0),
         0,
       );
       if (carriedGold > 0) {
@@ -1938,20 +2965,83 @@ class BoardScene extends Phaser.Scene {
         graphics.strokeLineShape(new Phaser.Geom.Line(centre.x + 32, centre.y - 14, centre.x + 32, centre.y - 2));
       }
     } else {
-      // Catapults occupy their left-hand anchor tile plus the tile to its right.
-      graphics.fillStyle(0x3a2b23, 0.25);
-      graphics.fillEllipse(x + 30, y + 27, 47, 6);
-      graphics.fillStyle(0x4f301c, alpha);
-      graphics.fillCircle(x + 12, y + 23, 6);
-      graphics.fillCircle(x + 48, y + 23, 6);
-      graphics.fillStyle(0xbd7434, alpha);
-      graphics.fillRect(x + 7, y + 15, 45, 7);
-      graphics.fillStyle(player.color, alpha);
-      graphics.fillRect(x + 18, y + 13, 22, 4);
-      graphics.lineStyle(3, 0x593a24, alpha);
-      graphics.strokeLineShape(new Phaser.Geom.Line(x + 24, y + 16, x + 51, y + 4));
-      graphics.fillStyle(0x59606a, alpha);
-      graphics.fillCircle(x + 53, y + 4, 4);
+      if (activeBoardTheme.terrainStyle === "storybook") {
+        const firing = this.flyingShot &&
+          this.flyingShot.shooterPlayerId === unit.playerId &&
+          this.flyingShot.from.x === unit.position.x &&
+          this.flyingShot.from.y === unit.position.y
+          ? this.flyingShot.progress
+          : 0;
+        // Keep the throwing arm at one physical length.  At the beginning of
+        // a shot it is visibly drawn down, then it swings up to release the
+        // stone; it must never telescope like a rubber arm.
+        const armSwing = Math.min(1, firing / 0.24);
+        const easedSwing = 1 - (1 - armSwing) ** 3;
+        const pivotX = x + 29;
+        const recoil = Math.sin(firing * Math.PI) * 2.4;
+        const baseY = y + recoil;
+        const pivotY = baseY + 15;
+        const armAngle = firing > 0
+          ? Phaser.Math.Linear(0.42, -1.08, easedSwing)
+          : -0.42;
+        const armLength = 26;
+        const armTipX = pivotX + Math.cos(armAngle) * armLength;
+        const armTipY = pivotY + Math.sin(armAngle) * armLength;
+
+        // Chunky toy-like wooden siege engine: strong wheels, a faction
+        // coloured sling cloth, and a broad timber frame over two squares.
+        graphics.fillStyle(0x243b48, alpha * 0.3);
+        graphics.fillEllipse(x + 30, y + 28, 50, 7);
+        graphics.fillStyle(0x493020, alpha);
+        graphics.fillCircle(x + 13, baseY + 23, 7);
+        graphics.fillCircle(x + 48, baseY + 23, 7);
+        graphics.fillStyle(0xc68843, alpha);
+        graphics.fillCircle(x + 13, baseY + 23, 4);
+        graphics.fillCircle(x + 48, baseY + 23, 4);
+        graphics.fillStyle(0x8b542b, alpha);
+        graphics.fillRoundedRect(x + 7, baseY + 14, 46, 8, 3);
+        graphics.fillStyle(0xdd9f52, alpha);
+        graphics.fillRect(x + 11, baseY + 16, 38, 2);
+        graphics.fillStyle(playerColor, alpha);
+        graphics.fillRoundedRect(x + 18, baseY + 11, 22, 4, 1.5);
+        graphics.fillStyle(0x5d3822, alpha);
+        graphics.fillTriangle(x + 18, baseY + 16, pivotX, baseY + 4, x + 35, baseY + 16);
+        graphics.fillCircle(pivotX, pivotY, 4);
+        graphics.lineStyle(4, 0x5d3822, alpha);
+        graphics.strokeLineShape(new Phaser.Geom.Line(pivotX, pivotY, armTipX, armTipY));
+        graphics.fillStyle(playerColor, alpha);
+        graphics.fillRoundedRect(armTipX - 4, armTipY - 2, 8, 4, 1.5);
+        if (firing < 0.17) {
+          graphics.fillStyle(0x59606a, alpha);
+          graphics.fillCircle(armTipX, armTipY, 4);
+          graphics.lineStyle(1, 0xd6dde0, alpha * 0.8);
+          graphics.strokeCircle(armTipX - 1, armTipY - 1, 3);
+        }
+        graphics.fillStyle(playerColor, alpha);
+        graphics.fillTriangle(x + 29, baseY + 4, x + 29, baseY - 4, x + 38, baseY + 1);
+        if (firing > 0 && firing < 0.42) {
+          const dust = Math.sin((firing / 0.42) * Math.PI);
+          graphics.fillStyle(0xe2c993, alpha * dust * 0.6);
+          for (let puff = 0; puff < 4; puff += 1) {
+            graphics.fillCircle(x + 8 + puff * 12, baseY + 27 - puff % 2 * 3, 2.5 + puff % 2 * 1.2);
+          }
+        }
+      } else {
+        // Accepted pre-overhaul Catapult retained for the Prototype theme.
+        graphics.fillStyle(0x3a2b23, 0.25);
+        graphics.fillEllipse(x + 30, y + 27, 47, 6);
+        graphics.fillStyle(0x4f301c, alpha);
+        graphics.fillCircle(x + 12, y + 23, 6);
+        graphics.fillCircle(x + 48, y + 23, 6);
+        graphics.fillStyle(0xbd7434, alpha);
+        graphics.fillRect(x + 7, y + 15, 45, 7);
+        graphics.fillStyle(playerColor, alpha);
+        graphics.fillRect(x + 18, y + 13, 22, 4);
+        graphics.lineStyle(3, 0x593a24, alpha);
+        graphics.strokeLineShape(new Phaser.Geom.Line(x + 24, y + 16, x + 51, y + 4));
+        graphics.fillStyle(0x59606a, alpha);
+        graphics.fillCircle(x + 53, y + 4, 4);
+      }
     }
   }
 }
@@ -1971,6 +3061,7 @@ function handleBoardSelection(position: Position): void {
           unit: { ...passenger, position: { ...passenger.position } },
           from: { ...boat.position },
           to: { ...position },
+        arrival: "disembarking",
         }
       : undefined;
     if (passenger && disembarkSoldier(gameState, selectedUnitId, position, passenger.id)) {
@@ -2326,7 +3417,7 @@ function updateAll(): void {
     (unit) => unit.playerId === player.id && !unit.embarkedOn && getLegalMoves(gameState!, unit.id).length > 0,
   );
   boardHelp.textContent = openingHornRunning
-    ? "The battle horn sounds across the fjord. The first turn begins when its call fades."
+      ? "The battle horn sounds across the fjord. The first turn begins when its call fades."
     : pendingCatapult
       ? "This Catapult has moved. Choose an intended square now, or press Skip firing before continuing."
       : gameState.turnPhase === "purchase"
@@ -2398,6 +3489,15 @@ function updateAll(): void {
   }
 }
 
+function positionSagaRevealOverBattlefield(): void {
+  const boardBounds = boardColumn.getBoundingClientRect();
+  const battlefieldBounds = gameCanvas.getBoundingClientRect();
+  eventReveal.style.left = `${battlefieldBounds.left - boardBounds.left}px`;
+  eventReveal.style.top = `${battlefieldBounds.top - boardBounds.top}px`;
+  eventReveal.style.width = `${battlefieldBounds.width}px`;
+  eventReveal.style.height = `${battlefieldBounds.height}px`;
+}
+
 function syncEventReveal(): boolean {
   const event = gameState?.lastEvent;
   if (!gameState || !event || dismissedEventSequence === event.sequence) {
@@ -2407,6 +3507,7 @@ function syncEventReveal(): boolean {
   const presentation = EVENT_PRESENTATION[event.cardId];
   const player = gameState.players.find((candidate) => candidate.id === event.playerId);
   const computerDraw = Boolean(player && player.controller !== "human");
+  positionSagaRevealOverBattlefield();
   eventReveal.hidden = false;
   eventSymbol.textContent = presentation.symbol;
   eventSymbol.style.setProperty("--event-color", presentation.color);
@@ -2993,6 +4094,9 @@ longhouseModal.addEventListener("click", (event) => {
 });
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !longhouseModal.hidden) closeLonghouse();
+});
+window.addEventListener("resize", () => {
+  if (!eventReveal.hidden) positionSagaRevealOverBattlefield();
 });
 feedbackForm.addEventListener("submit", (event) => {
   event.preventDefault();
