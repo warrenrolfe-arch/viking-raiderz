@@ -497,12 +497,11 @@
                 </label>
                 <label class="feedback-honeypot" aria-hidden="true">
                   Leave this field empty
-                  <input id="feedback-website" name="website" type="text" tabindex="-1" autocomplete="off" />
+                  <input id="feedback-website" name="botcheck" type="text" tabindex="-1" autocomplete="off" />
                 </label>
-                <div id="feedback-turnstile" class="feedback-turnstile" aria-label="Spam protection check"></div>
                 <div class="feedback-send-row">
                   <p id="feedback-status" role="status">
-                    A small raven-check keeps the longhouse free of spam. Your message is delivered privately to the war council.
+                    Your message is delivered privately to the war council. The longhouse has a strict no-bots policy.
                   </p>
                   <button id="feedback-submit" class="primary-button" type="submit">Send raven-mail</button>
                 </div>
@@ -516,7 +515,6 @@
         </section>
       </main>
     </div>
-    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

@@ -164,35 +164,13 @@ const feedbackCategory = requireElement<HTMLSelectElement>("feedback-category");
 const feedbackMessage = requireElement<HTMLTextAreaElement>("feedback-message");
 const feedbackStatus = requireElement<HTMLElement>("feedback-status");
 const feedbackWebsite = requireElement<HTMLInputElement>("feedback-website");
-const feedbackTurnstile = requireElement<HTMLElement>("feedback-turnstile");
 const feedbackSubmitButton = requireElement<HTMLButtonElement>("feedback-submit");
 const purchaseButtons = Array.from(document.querySelectorAll<HTMLButtonElement>(".purchase-button"));
 const longhouseOpenButtons = Array.from(document.querySelectorAll<HTMLButtonElement>("[data-longhouse-page]"));
 const longhousePages = Array.from(document.querySelectorAll<HTMLElement>("[data-longhouse-content]"));
 
 type LonghousePage = "instructions" | "acknowledgements" | "feedback";
-
-type TurnstileApi = {
-  render: (container: HTMLElement, options: {
-    sitekey: string;
-    theme: "light";
-    callback: (token: string) => void;
-    "expired-callback": () => void;
-    "error-callback": () => void;
-  }) => string;
-  getResponse: (widgetId: string) => string | undefined;
-  reset: (widgetId: string) => void;
-};
-
-declare global {
-  interface Window {
-    turnstile?: TurnstileApi;
-  }
-}
-
-const FEEDBACK_TURNSTILE_SITE_KEY = "0x4AAAAAAF51jeePlMMC7zkt";
-let feedbackTurnstileWidgetId: string | undefined;
-let feedbackTurnstileReady = false;
+const WEB3FORMS_ACCESS_KEY = "f8b0ab63-dde7-4ba9-a38c-b6d7ac963948";
 
 const LONGHOUSE_PAGE_COPY: Record<LonghousePage, { title: string; subtitle: string; eyebrow: string; seal: string }> = {
   instructions: {
@@ -228,7 +206,6 @@ function openLonghousePage(page: LonghousePage): void {
   longhouseModal.hidden = false;
   longhouseModal.scrollTop = 0;
   longhouseTitle.focus();
-  if (page === "feedback") ensureFeedbackTurnstile();
 }
 
 function closeLonghouse(): void {
@@ -4165,65 +4142,35 @@ window.addEventListener("resize", () => {
   if (!eventReveal.hidden) positionSagaRevealOverBattlefield();
 });
 
-function ensureFeedbackTurnstile(attempt = 0): void {
-  if (feedbackTurnstileWidgetId || feedbackTurnstileReady) return;
-  if (!window.turnstile) {
-    if (attempt < 20) window.setTimeout(() => ensureFeedbackTurnstile(attempt + 1), 250);
-    return;
-  }
-  feedbackTurnstileWidgetId = window.turnstile.render(feedbackTurnstile, {
-    sitekey: FEEDBACK_TURNSTILE_SITE_KEY,
-    theme: "light",
-    callback: () => {
-      feedbackTurnstileReady = true;
-      feedbackStatus.textContent = "The raven knows you are a real person. Send when ready.";
-    },
-    "expired-callback": () => {
-      feedbackTurnstileReady = false;
-      feedbackStatus.textContent = "The raven-check expired. Please complete it again before sending.";
-    },
-    "error-callback": () => {
-      feedbackTurnstileReady = false;
-      feedbackStatus.textContent = "The raven-check could not load. Please refresh and try again.";
-    },
-  });
-}
-
 feedbackForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   if (!feedbackForm.reportValidity()) return;
-  ensureFeedbackTurnstile();
-  const token = feedbackTurnstileWidgetId ? window.turnstile?.getResponse(feedbackTurnstileWidgetId) : undefined;
-  if (!token) {
-    feedbackStatus.textContent = "Please complete the raven-check before sending your message.";
-    return;
-  }
   feedbackSubmitButton.disabled = true;
   feedbackStatus.textContent = "A raven is taking your message to the longhouse…";
   try {
-    const response = await fetch("/api/feedback", {
+    const response = await fetch("https://api.web3forms.com/submit", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({
+        access_key: WEB3FORMS_ACCESS_KEY,
+        subject: `Viking Raiderz feedback: ${feedbackCategory.value}`,
+        from_name: "Viking Raiderz Feedback",
         name: feedbackName.value,
         email: feedbackEmail.value,
         category: feedbackCategory.value,
         message: feedbackMessage.value,
-        website: feedbackWebsite.value,
-        turnstileToken: token,
+        botcheck: Boolean(feedbackWebsite.value),
       }),
     });
-    const result = await response.json().catch(() => undefined) as { message?: string } | undefined;
+    const result = await response.json().catch(() => undefined) as { success?: boolean; message?: string; body?: { message?: string } } | undefined;
     if (!response.ok) throw new Error(result?.message ?? "The raven lost its way.");
+    if (!result?.success) throw new Error(result?.message ?? result?.body?.message ?? "The raven lost its way.");
     feedbackForm.reset();
-    feedbackTurnstileReady = false;
-    if (feedbackTurnstileWidgetId) window.turnstile?.reset(feedbackTurnstileWidgetId);
     feedbackStatus.textContent = "Message delivered. The war council appreciates your raven-mail!";
   } catch (error) {
     feedbackStatus.textContent = error instanceof Error
       ? error.message
       : "The raven lost its way. Please try again shortly.";
-    if (feedbackTurnstileWidgetId) window.turnstile?.reset(feedbackTurnstileWidgetId);
   } finally {
     feedbackSubmitButton.disabled = false;
   }
