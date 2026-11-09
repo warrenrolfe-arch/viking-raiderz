@@ -1745,6 +1745,23 @@ main {
   resize: vertical;
 }
 
+.feedback-honeypot {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.feedback-turnstile {
+  grid-column: 1 / -1;
+  min-height: 65px;
+  display: flex;
+  align-items: center;
+}
+
 .feedback-form input:focus,
 .feedback-form select:focus,
 .feedback-form textarea:focus {

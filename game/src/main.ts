@@ -163,11 +163,36 @@ const feedbackEmail = requireElement<HTMLInputElement>("feedback-email");
 const feedbackCategory = requireElement<HTMLSelectElement>("feedback-category");
 const feedbackMessage = requireElement<HTMLTextAreaElement>("feedback-message");
 const feedbackStatus = requireElement<HTMLElement>("feedback-status");
+const feedbackWebsite = requireElement<HTMLInputElement>("feedback-website");
+const feedbackTurnstile = requireElement<HTMLElement>("feedback-turnstile");
+const feedbackSubmitButton = requireElement<HTMLButtonElement>("feedback-submit");
 const purchaseButtons = Array.from(document.querySelectorAll<HTMLButtonElement>(".purchase-button"));
 const longhouseOpenButtons = Array.from(document.querySelectorAll<HTMLButtonElement>("[data-longhouse-page]"));
 const longhousePages = Array.from(document.querySelectorAll<HTMLElement>("[data-longhouse-content]"));
 
 type LonghousePage = "instructions" | "acknowledgements" | "feedback";
+
+type TurnstileApi = {
+  render: (container: HTMLElement, options: {
+    sitekey: string;
+    theme: "light";
+    callback: (token: string) => void;
+    "expired-callback": () => void;
+    "error-callback": () => void;
+  }) => string;
+  getResponse: (widgetId: string) => string | undefined;
+  reset: (widgetId: string) => void;
+};
+
+declare global {
+  interface Window {
+    turnstile?: TurnstileApi;
+  }
+}
+
+const FEEDBACK_TURNSTILE_SITE_KEY = "0x4AAAAAAF51jeePlMMC7zkt";
+let feedbackTurnstileWidgetId: string | undefined;
+let feedbackTurnstileReady = false;
 
 const LONGHOUSE_PAGE_COPY: Record<LonghousePage, { title: string; subtitle: string; eyebrow: string; seal: string }> = {
   instructions: {
@@ -203,6 +228,7 @@ function openLonghousePage(page: LonghousePage): void {
   longhouseModal.hidden = false;
   longhouseModal.scrollTop = 0;
   longhouseTitle.focus();
+  if (page === "feedback") ensureFeedbackTurnstile();
 }
 
 function closeLonghouse(): void {
@@ -4138,19 +4164,69 @@ document.addEventListener("keydown", (event) => {
 window.addEventListener("resize", () => {
   if (!eventReveal.hidden) positionSagaRevealOverBattlefield();
 });
-feedbackForm.addEventListener("submit", (event) => {
+
+function ensureFeedbackTurnstile(attempt = 0): void {
+  if (feedbackTurnstileWidgetId || feedbackTurnstileReady) return;
+  if (!window.turnstile) {
+    if (attempt < 20) window.setTimeout(() => ensureFeedbackTurnstile(attempt + 1), 250);
+    return;
+  }
+  feedbackTurnstileWidgetId = window.turnstile.render(feedbackTurnstile, {
+    sitekey: FEEDBACK_TURNSTILE_SITE_KEY,
+    theme: "light",
+    callback: () => {
+      feedbackTurnstileReady = true;
+      feedbackStatus.textContent = "The raven knows you are a real person. Send when ready.";
+    },
+    "expired-callback": () => {
+      feedbackTurnstileReady = false;
+      feedbackStatus.textContent = "The raven-check expired. Please complete it again before sending.";
+    },
+    "error-callback": () => {
+      feedbackTurnstileReady = false;
+      feedbackStatus.textContent = "The raven-check could not load. Please refresh and try again.";
+    },
+  });
+}
+
+feedbackForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   if (!feedbackForm.reportValidity()) return;
-  const subject = `Viking Raiderz feedback: ${feedbackCategory.value}`;
-  const lines = [
-    `Feedback category: ${feedbackCategory.value}`,
-    `Name: ${feedbackName.value.trim() || "Not provided"}`,
-    `Reply email: ${feedbackEmail.value.trim() || "Not provided"}`,
-    "",
-    feedbackMessage.value.trim(),
-  ];
-  feedbackStatus.textContent = "Your email app should now open with the raven-mail prepared. Please review it and press Send.";
-  window.location.href = `mailto:hello@vikingraiderz.co.uk?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(lines.join("\n"))}`;
+  ensureFeedbackTurnstile();
+  const token = feedbackTurnstileWidgetId ? window.turnstile?.getResponse(feedbackTurnstileWidgetId) : undefined;
+  if (!token) {
+    feedbackStatus.textContent = "Please complete the raven-check before sending your message.";
+    return;
+  }
+  feedbackSubmitButton.disabled = true;
+  feedbackStatus.textContent = "A raven is taking your message to the longhouse…";
+  try {
+    const response = await fetch("/api/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: feedbackName.value,
+        email: feedbackEmail.value,
+        category: feedbackCategory.value,
+        message: feedbackMessage.value,
+        website: feedbackWebsite.value,
+        turnstileToken: token,
+      }),
+    });
+    const result = await response.json().catch(() => undefined) as { message?: string } | undefined;
+    if (!response.ok) throw new Error(result?.message ?? "The raven lost its way.");
+    feedbackForm.reset();
+    feedbackTurnstileReady = false;
+    if (feedbackTurnstileWidgetId) window.turnstile?.reset(feedbackTurnstileWidgetId);
+    feedbackStatus.textContent = "Message delivered. The war council appreciates your raven-mail!";
+  } catch (error) {
+    feedbackStatus.textContent = error instanceof Error
+      ? error.message
+      : "The raven lost its way. Please try again shortly.";
+    if (feedbackTurnstileWidgetId) window.turnstile?.reset(feedbackTurnstileWidgetId);
+  } finally {
+    feedbackSubmitButton.disabled = false;
+  }
 });
 for (const button of purchaseButtons) {
   button.addEventListener("click", () => {
