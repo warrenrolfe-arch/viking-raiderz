@@ -425,6 +425,8 @@ function chooseCastlePositions(
     sharedLand.has(positionKey(position)) &&
     hasCastleMooring(terrain, width, height, position) &&
     hasStartingFormationSpace(terrain, width, height, position) &&
+    adjacentWaterCount(terrain, width, height, position) >= 2 &&
+    adjacentWaterCount(terrain, width, height, position) <= 3 &&
     adjacentLandCount(terrain, width, height, position) >= 3 &&
     Object.values(positions).every((existing) =>
       !hasImmediateCastleLane(terrain, width, height, position, existing) &&
@@ -463,6 +465,20 @@ function adjacentLandCount(terrain: Terrain[], width: number, height: number, or
       const x = origin.x + dx;
       const y = origin.y + dy;
       if (x >= 0 && y >= 0 && x < width && y < height && terrain[y * width + x] === "land") count += 1;
+    }
+  }
+  return count;
+}
+
+/** Castles begin on a readable shoreline, with neither a token puddle nor water on most sides. */
+function adjacentWaterCount(terrain: Terrain[], width: number, height: number, origin: Position): number {
+  let count = 0;
+  for (let dy = -1; dy <= 1; dy += 1) {
+    for (let dx = -1; dx <= 1; dx += 1) {
+      if (dx === 0 && dy === 0) continue;
+      const x = origin.x + dx;
+      const y = origin.y + dy;
+      if (x >= 0 && y >= 0 && x < width && y < height && terrain[y * width + x] === "water") count += 1;
     }
   }
   return count;

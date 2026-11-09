@@ -1053,6 +1053,154 @@ main {
   font-size: 0.78rem;
 }
 
+.turn-order-panel {
+  padding: 0.8rem 1rem 0.9rem;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background:
+    linear-gradient(90deg, rgba(255, 244, 204, 0.66), rgba(255, 251, 237, 0.9)),
+    var(--panel-light);
+}
+
+.turn-order-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-bottom: 0.7rem;
+}
+
+.turn-order-heading .eyebrow {
+  margin: 0;
+  color: #a36d22;
+}
+
+.turn-order-heading small {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-style: italic;
+  text-align: right;
+}
+
+.turn-order-list {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.turn-order-player {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  min-width: 0;
+  color: #526d74;
+  transition: transform 160ms ease, opacity 160ms ease;
+}
+
+.turn-order-player:not(:last-child)::after {
+  position: absolute;
+  top: 0.9rem;
+  left: calc(100% + 0.03rem);
+  color: #b38c4c;
+  content: "›";
+  font-family: Georgia, serif;
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.turn-order-emblem {
+  display: grid;
+  place-items: center;
+  width: 1.8rem;
+  height: 1.8rem;
+  border: 2px solid rgba(255, 255, 255, 0.8);
+  border-radius: 50%;
+  color: #fffdf3;
+  background: var(--turn-order-color);
+  box-shadow: 0 2px 0 color-mix(in srgb, var(--turn-order-color) 65%, #4b3828);
+  font-family: "Almendra", Georgia, serif;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.turn-order-name {
+  max-width: 4.3rem;
+  margin-top: 0.28rem;
+  overflow: hidden;
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1.1;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.turn-order-now {
+  margin-top: 0.12rem;
+  padding: 0.06rem 0.28rem;
+  border-radius: 999px;
+  color: #5a3a14;
+  background: #f3c14f;
+  font-size: 0.56rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.turn-order-player.is-current {
+  color: #1d4652;
+  transform: translateY(-2px);
+}
+
+.turn-order-player.is-current .turn-order-emblem {
+  box-shadow: 0 0 0 3px rgba(243, 193, 79, 0.42), 0 3px 0 color-mix(in srgb, var(--turn-order-color) 65%, #4b3828);
+}
+
+.turn-order-player.is-eliminated {
+  opacity: 0.38;
+  filter: grayscale(0.72);
+}
+
+.return-war-council-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  width: calc(100% - 2rem);
+  min-height: 3.15rem;
+  margin: 0.9rem 1rem 1rem;
+  padding: 0.75rem 1rem;
+  border: 2px solid #4a7681;
+  border-radius: 11px;
+  color: #fff9e9;
+  background: linear-gradient(145deg, #3c7480, #245563);
+  box-shadow: inset 0 -3px 0 rgba(10, 39, 48, 0.36), 0 3px 0 rgba(30, 71, 81, 0.18);
+  font: inherit;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+
+.return-war-council-button::before {
+  content: "↩";
+  font-family: Georgia, serif;
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.return-war-council-button:hover {
+  border-color: #e3b850;
+  background: linear-gradient(145deg, #4d8995, #2c6674);
+}
+
+.return-war-council-button:focus-visible {
+  outline: 3px solid #f3c14f;
+  outline-offset: 2px;
+}
+
 .panel-section {
   padding: 1rem;
   border-top: 1px solid var(--line);
@@ -1508,8 +1656,42 @@ main {
 
 .acknowledgements-page {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr;
   gap: 0.85rem;
+}
+
+.acknowledgement-list {
+  display: grid;
+  gap: 0.7rem;
+  padding: 0;
+  margin: 0.8rem 0 0;
+  list-style: none;
+}
+
+.acknowledgement-list li {
+  position: relative;
+  padding-left: 1.45rem;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.acknowledgement-list li::before {
+  position: absolute;
+  top: 0.02rem;
+  left: 0;
+  color: #b47a25;
+  content: "ᚱ";
+  font-family: Georgia, serif;
+  font-weight: 800;
+}
+
+.acknowledgement-list a {
+  color: #1d6977;
+  font-weight: 800;
+}
+
+.acknowledgement-list a:hover {
+  color: #a9671d;
 }
 
 .acknowledgements-page[hidden],
@@ -1606,9 +1788,10 @@ main {
   }
 
   .chief-card,
+  .turn-order-panel,
   .log-section,
   .report-button,
-  .text-button {
+  .return-war-council-button {
     grid-column: 1 / -1;
   }
 

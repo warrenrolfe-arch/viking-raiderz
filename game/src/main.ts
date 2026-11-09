@@ -79,6 +79,13 @@ const PLAYER_OPTIONS: Array<{
   { id: "green", name: "Green", title: "Leif the Loud", color: "#3d9b63", defaultController: "off" },
 ];
 
+const TURN_ORDER_EMBLEMS: Record<PlayerId, { glyph: string; label: string }> = {
+  blue: { glyph: "≋", label: "wave" },
+  red: { glyph: "♨", label: "flame" },
+  pink: { glyph: "ᚱ", label: "raven rune" },
+  green: { glyph: "♠", label: "pine" },
+};
+
 const setup = requireElement<HTMLElement>("setup");
 const gameShell = requireElement<HTMLElement>("game-shell");
 const heritageNote = requireElement<HTMLElement>("heritage-note");
@@ -117,6 +124,8 @@ const turnBadge = requireElement<HTMLElement>("turn-badge");
 const boardColumn = requireElement<HTMLElement>("board-column");
 const gameCanvas = requireElement<HTMLElement>("game-canvas");
 const activeChief = requireElement<HTMLElement>("active-chief");
+const turnOrderList = requireElement<HTMLOListElement>("turn-order-list");
+const turnOrderStatus = requireElement<HTMLElement>("turn-order-status");
 const goldValue = requireElement<HTMLElement>("gold-value");
 const selectedUnitLabel = requireElement<HTMLElement>("selected-unit");
 const boardHelp = requireElement<HTMLElement>("board-help");
@@ -3304,9 +3313,37 @@ function updateSagaTable(): void {
   }
 }
 
+function renderTurnOrder(state: GameState): void {
+  const current = activePlayer(state);
+  const activeIndex = state.activePlayerIndex;
+  turnOrderStatus.textContent = `${current.name} is at the helm`;
+  turnOrderList.innerHTML = state.players.map((player, index) => {
+    const isCurrent = index === activeIndex;
+    const emblem = TURN_ORDER_EMBLEMS[player.id];
+    const stateClass = [
+      "turn-order-player",
+      isCurrent ? "is-current" : "",
+      player.eliminated ? "is-eliminated" : "",
+    ].filter(Boolean).join(" ");
+    const label = player.eliminated
+      ? `${player.name} has lost their castle`
+      : isCurrent
+        ? `${player.name} is taking this turn`
+        : `${player.name} follows in the fixed turn order`;
+    return `
+      <li class="${stateClass}" ${isCurrent ? 'aria-current="step"' : ""} aria-label="${label}">
+        <span class="turn-order-emblem" data-emblem="${emblem.label}" style="--turn-order-color: ${player.cssColor}" aria-hidden="true">${emblem.glyph}</span>
+        <span class="turn-order-name">${player.name}</span>
+        ${isCurrent ? '<span class="turn-order-now">Now</span>' : ""}
+      </li>
+    `;
+  }).join("");
+}
+
 function updateAll(): void {
   if (!gameState) return;
   const player = activePlayer(gameState);
+  renderTurnOrder(gameState);
   if (mapPreviewActive) {
     sagaTable.hidden = true;
     roundLabel.textContent = "Battlefield preview";
@@ -3514,7 +3551,7 @@ function syncEventReveal(): boolean {
   eventTitle.textContent = presentation.title;
   eventDescription.textContent = computerDraw
     ? `${player?.name ?? "A faction"} drew this card. The computer chief will continue after four seconds.`
-    : `${player?.name ?? "A faction"} drew this card at the end of their turn.`;
+    : `${player?.name ?? "A faction"} drew this card at the end of their turn. The Saga will continue after six seconds unless you choose to see its effect now.`;
   eventOutcome.textContent = event.outcome;
   eventDeckCount.textContent = event.reshuffled && sagaDrawReadySequence !== event.sequence
     ? "The old tales are being shuffled into a fresh Saga pile."
@@ -3530,7 +3567,10 @@ function syncEventReveal(): boolean {
   if (!drawReady && sagaDrawAnimationSequence !== event.sequence) {
     void animateSagaDraw(event);
   }
-  if (computerDraw && drawReady && autoSagaEventSequence !== event.sequence) {
+  // A card must never hold up a hot-seat match indefinitely. Computer chiefs
+  // have the shorter four-second pause, while human players have six seconds
+  // to read the card or press the button before the same resolution begins.
+  if (drawReady && autoSagaEventSequence !== event.sequence) {
     if (autoSagaTimer !== undefined) window.clearTimeout(autoSagaTimer);
     autoSagaEventSequence = event.sequence;
     autoSagaTimer = window.setTimeout(() => {
@@ -3538,7 +3578,7 @@ function syncEventReveal(): boolean {
       if (gameState?.lastEvent?.sequence === event.sequence && dismissedEventSequence !== event.sequence) {
         void runSagaEffect(event);
       }
-    }, 4_000);
+    }, computerDraw ? 4_000 : 6_000);
   }
   return true;
 }

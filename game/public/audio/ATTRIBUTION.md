@@ -11,7 +11,7 @@ The following files were supplied by the project owner on 3 November 2026 as fre
 
 The following music file was supplied by the project owner on 6 November 2026 as a licence-free game-music asset:
 
-- `menu-viking-theme.mp3` — originally named `Raise the Horn and Raid.mp3`; this replaces the earlier temporary interface track.
+- `menu-viking-theme.mp3` — originally named `Raise the Horn and Raid v2.mp3`; created by Warren Rolfe with Suno while subscribed to Suno Pro. It replaces the earlier interface track and loops on the War Council screen.
 - `battle-report-viking-theme.mp3` — originally named `AudioTranscriberAI_Free License-Free Viking Music for Games & More.mp3`; loops quietly on the Battle Report and while reviewing the final battlefield.
 
 Confirm the original licence and any required attribution before a public release. The game combines the bubbles file with its own procedural wood-break and hull-groan layers for the Longboat sinking effect.

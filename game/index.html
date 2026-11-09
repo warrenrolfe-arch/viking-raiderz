@@ -277,6 +277,14 @@
           <aside id="command-panel" class="command-panel" aria-label="Turn controls">
             <section id="active-chief" class="chief-card"></section>
 
+            <section class="turn-order-panel" aria-labelledby="turn-order-title">
+              <div class="turn-order-heading">
+                <p id="turn-order-title" class="eyebrow">Turn order</p>
+                <small id="turn-order-status">The chiefs are taking their places.</small>
+              </div>
+              <ol id="turn-order-list" class="turn-order-list" aria-live="polite"></ol>
+            </section>
+
             <section class="panel-section">
               <div class="section-heading">
                 <h2>War chest</h2>
@@ -318,7 +326,7 @@
             </section>
 
             <button id="view-battle-report" class="primary-button report-button" type="button" hidden>View battle report</button>
-            <button id="new-game" class="text-button" type="button">Return to war council</button>
+            <button id="new-game" class="return-war-council-button" type="button">Return to war council</button>
           </aside>
         </section>
 
@@ -444,11 +452,15 @@
             <section class="longhouse-page acknowledgements-page" data-longhouse-content="acknowledgements" hidden>
               <article class="acknowledgement-panel">
                 <h3>Credits</h3>
-                <p>The full credits roll will be populated here as the game approaches its public voyage.</p>
+                <ul class="acknowledgement-list">
+                  <li><strong>Mark Lucas</strong>, for the original game. Great work in 48K.</li>
+                  <li><strong>Eddie</strong>, for playing this with his much younger brother in the 1980s—and losing a finger to earn a cool Viking name. That’s dedication.</li>
+                  <li><a href="https://www.youtube.com/@Wolkenwacht" target="_blank" rel="noreferrer">Wolkenwacht</a> — music from this channel plays over the Battle Report at the end of the game.</li>
+                </ul>
               </article>
               <article class="acknowledgement-panel merry-makers-panel">
                 <h3>Merry Makers</h3>
-                <p>Those kind enough to buy me a mead will be listed here, thanks.</p>
+                <p>Those kind enough to buy me a mead will be listed here. Thanks, you glorious enablers.</p>
               </article>
             </section>
 

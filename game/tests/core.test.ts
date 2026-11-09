@@ -792,6 +792,30 @@ describe("game rules", () => {
     }
   });
 
+  it("gives every home castle two or three neighbouring water squares", () => {
+    for (let seed = 1; seed <= 100; seed += 1) {
+      const state = createGame([
+        { id: "blue", controller: "human" },
+        { id: "red", controller: "easy" },
+        { id: "pink", controller: "normal" },
+        { id: "green", controller: "hard" },
+      ], seed);
+      for (const player of state.players) {
+        let neighbouringWater = 0;
+        for (let dy = -1; dy <= 1; dy += 1) {
+          for (let dx = -1; dx <= 1; dx += 1) {
+            if (dx === 0 && dy === 0) continue;
+            const x = player.castle.x + dx;
+            const y = player.castle.y + dy;
+            if (state.terrain[y * state.width + x] === "water") neighbouringWater += 1;
+          }
+        }
+        expect(neighbouringWater, `${player.name} water frontage on seed ${seed}`).toBeGreaterThanOrEqual(2);
+        expect(neighbouringWater, `${player.name} water frontage on seed ${seed}`).toBeLessThanOrEqual(3);
+      }
+    }
+  });
+
   it("places every starting unit adjacent to its own castle", () => {
     for (let seed = 1; seed <= 60; seed += 1) {
       const state = createGame([
