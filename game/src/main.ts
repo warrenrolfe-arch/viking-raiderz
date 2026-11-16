@@ -171,6 +171,11 @@ const longhousePages = Array.from(document.querySelectorAll<HTMLElement>("[data-
 
 type LonghousePage = "instructions" | "acknowledgements" | "feedback" | "privacy";
 const WEB3FORMS_ACCESS_KEY = "f8b0ab63-dde7-4ba9-a38c-b6d7ac963948";
+const HISTORY_VIEW_KEY = "vikingRaiderzView";
+
+type VikingHistoryState = Record<string, unknown> & {
+  [HISTORY_VIEW_KEY]?: "setup" | "game";
+};
 
 const LONGHOUSE_PAGE_COPY: Record<LonghousePage, { title: string; subtitle: string; eyebrow: string; seal: string }> = {
   instructions: {
@@ -3954,6 +3959,29 @@ function ensureBoard(): void {
   });
 }
 
+function currentHistoryState(): VikingHistoryState {
+  return history.state && typeof history.state === "object"
+    ? history.state as VikingHistoryState
+    : {};
+}
+
+function setHistoryView(view: "setup" | "game", method: "push" | "replace"): void {
+  const nextState: VikingHistoryState = {
+    ...currentHistoryState(),
+    [HISTORY_VIEW_KEY]: view,
+  };
+  if (method === "push") history.pushState(nextState, "", window.location.href);
+  else history.replaceState(nextState, "", window.location.href);
+}
+
+function requestReturnToSetup(): void {
+  if (currentHistoryState()[HISTORY_VIEW_KEY] === "game") {
+    history.back();
+    return;
+  }
+  returnToSetup();
+}
+
 function commenceMatch(): void {
   const hornSequence = ++openingHornSequence;
   mapPreviewActive = false;
@@ -3988,6 +4016,7 @@ function startGame(): void {
   setSoundEffectsEnabled(soundEffectsToggle.checked);
   setMusicEnabled(musicToggle.checked);
   createFreshMatch();
+  setHistoryView("game", "push");
   heritageNote.hidden = true;
   setup.hidden = true;
   gameShell.hidden = false;
@@ -4113,7 +4142,7 @@ boatPassengersPanel.addEventListener("click", (event) => {
   interactionMode = "disembark";
   updateAll();
 });
-newGameButton.addEventListener("click", returnToSetup);
+newGameButton.addEventListener("click", requestReturnToSetup);
 viewBattleReportButton.addEventListener("click", () => {
   if (!gameState?.winnerId) return;
   renderBattleReport(gameState);
@@ -4123,7 +4152,7 @@ viewBattleReportButton.addEventListener("click", () => {
 reviewBattlefieldButton.addEventListener("click", () => {
   battleReport.hidden = true;
 });
-reportNewGameButton.addEventListener("click", returnToSetup);
+reportNewGameButton.addEventListener("click", requestReturnToSetup);
 buyMeadButton.addEventListener("click", () => {
   window.open(
     "https://www.buymeacoffee.com/warrenrolfa",
@@ -4189,6 +4218,25 @@ for (const button of purchaseButtons) {
     updateAll();
   });
 }
+
+// Keep the War Council and an active battle as two same-page history entries.
+// This makes the browser Back button leave a match before it leaves the site.
+setHistoryView("setup", "replace");
+window.addEventListener("popstate", (event) => {
+  const historyView = event.state && typeof event.state === "object"
+    ? (event.state as VikingHistoryState)[HISTORY_VIEW_KEY]
+    : undefined;
+
+  if (!setup.hidden) {
+    // A completed Back navigation cannot reconstruct a discarded match when
+    // the player presses Forward, so keep that stale entry at the War Council.
+    if (historyView === "game") setHistoryView("setup", "replace");
+    return;
+  }
+
+  returnToSetup();
+  if (historyView !== "setup") setHistoryView("setup", "replace");
+});
 
 buildSetup();
 validateSetups();
