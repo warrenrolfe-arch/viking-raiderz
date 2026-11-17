@@ -41,7 +41,7 @@ export const TUTORIAL_LESSONS: readonly TutorialLesson[] = [
     number: 3,
     symbol: "⌁",
     title: "Longboat School",
-    summary: "Embark, sail with the horizontal hull and choose who disembarks.",
+    summary: "Embark, sail, disembark and ram an enemy Longboat to sink it.",
     estimatedTime: "about 2 minutes",
   },
   {
@@ -49,7 +49,7 @@ export const TUTORIAL_LESSONS: readonly TutorialLesson[] = [
     number: 4,
     symbol: "◆",
     title: "Catapult Practice",
-    summary: "Move the two-square weapon, fire immediately and observe its scatter.",
+    summary: "Move and fire the weapon, then destroy it with a direct Viking attack.",
     estimatedTime: "about 1 minute",
   },
   {
@@ -168,13 +168,15 @@ export function createTutorialGame(lessonId: TutorialLessonId): GameState {
       }
       addUnit(state, "tutorial-sailor", "blue", "soldier", { x: 8, y: 10 });
       addUnit(state, "tutorial-boat", "blue", "longboat", { x: 8, y: 11 });
-      state.log = ["The Longboat can carry up to three Vikings. Begin by boarding one."];
+      addUnit(state, "tutorial-enemy-boat", "red", "longboat", { x: 24, y: 11 });
+      state.log = ["The Longboat can carry up to three Vikings—and ram an enemy vessel. Begin by boarding one."];
       break;
 
     case "catapults":
       addUnit(state, "tutorial-catapult", "blue", "catapult", { x: 7, y: 12 });
       addUnit(state, "tutorial-target", "red", "soldier", { x: 20, y: 12 });
-      state.log = ["Catapults occupy two horizontal squares and may move up to nine."];
+      addUnit(state, "tutorial-catapult-raider", "red", "soldier", { x: 11, y: 19 });
+      state.log = ["Catapults occupy two horizontal squares and may move up to nine—but are helpless in direct combat with a Viking."];
       break;
 
     case "combat":

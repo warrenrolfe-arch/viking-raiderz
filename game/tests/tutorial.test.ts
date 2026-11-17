@@ -57,20 +57,30 @@ describe("interactive tutorial scenarios", () => {
     expect(drinking.units.find((unit) => unit.id === "tutorial-soberer")?.position).toEqual({ x: 11, y: 12 });
   });
 
-  it("supports boarding, a nine-square Longboat move and chosen disembarkation", () => {
+  it("supports boarding, sailing, disembarkation and a guaranteed Longboat ram", () => {
     const state = createTutorialGame("longboats");
     expect(moveUnit(state, "tutorial-sailor", { x: 8, y: 11 })).toBe(true);
     expect(state.units.find((unit) => unit.id === "tutorial-sailor")?.embarkedOn).toBe("tutorial-boat");
     expect(moveUnit(state, "tutorial-boat", { x: 17, y: 11 })).toBe(true);
     expect(disembarkSoldier(state, "tutorial-boat", { x: 17, y: 10 }, "tutorial-sailor")).toBe(true);
+    state.units.find((unit) => unit.id === "tutorial-boat")!.moved = false;
+    expect(moveUnit(state, "tutorial-boat", { x: 22, y: 11 })).toBe(true);
+    expect(state.units.some((unit) => unit.id === "tutorial-enemy-boat")).toBe(false);
+    expect(state.units.find((unit) => unit.id === "tutorial-boat")?.position).toEqual({ x: 22, y: 11 });
+    expect(state.log[0]).toContain("rams and sinks");
   });
 
-  it("opens the immediate firing window after Catapult movement", () => {
+  it("opens the firing window and demonstrates that a Viking always destroys a Catapult", () => {
     const state = createTutorialGame("catapults");
     expect(moveUnit(state, "tutorial-catapult", { x: 11, y: 12 })).toBe(true);
     expect(state.units.find((unit) => unit.id === "tutorial-catapult")?.pendingFireAfterMove).toBe(true);
     expect(fireCatapult(state, "tutorial-catapult", { x: 20, y: 12 })).toBe(true);
     expect(state.units.find((unit) => unit.id === "tutorial-catapult")?.fired).toBe(true);
+    state.activePlayerIndex = state.players.findIndex((player) => player.id === "red");
+    expect(moveUnit(state, "tutorial-catapult-raider", { x: 11, y: 12 })).toBe(true);
+    expect(state.units.some((unit) => unit.id === "tutorial-catapult")).toBe(false);
+    expect(state.units.find((unit) => unit.id === "tutorial-catapult-raider")?.position).toEqual({ x: 11, y: 12 });
+    expect(state.log[0]).toContain("overruns the catapult");
   });
 
   it("gives the combat and castle demonstrations fixed successful outcomes", () => {

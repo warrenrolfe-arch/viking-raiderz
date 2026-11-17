@@ -242,8 +242,14 @@ function tutorialExpectedTarget(kind: TutorialTargetKind): Position | undefined 
       return targets[stage];
     }
     if (lessonId === "drunkenness") return { x: 12, y: 12 };
-    if (lessonId === "longboats") return stage === 0 ? { x: 8, y: 11 } : stage === 1 ? { x: 17, y: 11 } : undefined;
-    if (lessonId === "catapults" && stage === 0) return { x: 11, y: 12 };
+    if (lessonId === "longboats") {
+      if (stage === 0) return { x: 8, y: 11 };
+      if (stage === 1) return { x: 17, y: 11 };
+      if (stage === 3) return { x: 22, y: 11 };
+    }
+    if (lessonId === "catapults") {
+      if (stage === 0 || stage === 2) return { x: 11, y: 12 };
+    }
     if (lessonId === "combat") return { x: 12, y: 12 };
     if (lessonId === "castles") return { x: 26, y: 6 };
   }
@@ -265,7 +271,7 @@ function tutorialFocusUnitId(): string | undefined {
     case "movement": return "tutorial-mover";
     case "drunkenness": return tutorialSession.stage === 0 ? "tutorial-drinker" : "tutorial-soberer";
     case "longboats": return tutorialSession.stage === 0 ? "tutorial-sailor" : "tutorial-boat";
-    case "catapults": return "tutorial-catapult";
+    case "catapults": return tutorialSession.stage < 2 ? "tutorial-catapult" : "tutorial-catapult-raider";
     case "combat": return "tutorial-attacker";
     case "castles": return "tutorial-sieger";
     case "purchasing": return undefined;
@@ -3488,6 +3494,18 @@ function tutorialCopy(): { instruction: string; rule: string; hint: string; step
   if (!tutorialSession) return { instruction: "", rule: "", hint: "", steps: 1 };
   const { lessonId, stage, complete } = tutorialSession;
   if (complete) {
+    if (lessonId === "longboats") return {
+      instruction: "Lesson complete — the enemy Longboat is beneath the waves!",
+      rule: "A moving Longboat that rams an enemy Longboat always wins and sinks it. The attacking Longboat survives in the ramming position.",
+      hint: "Ramming is guaranteed, but sailing into danger afterwards is still a traditional Viking decision.",
+      steps: 4,
+    };
+    if (lessonId === "catapults") return {
+      instruction: "Lesson complete — the Catapult has been smashed!",
+      rule: "A Viking who directly attacks an enemy Catapult always wins. There is no combat roll: the Catapult is destroyed.",
+      hint: "Keep Catapults protected by friendly Vikings if you want them to keep throwing rocks.",
+      steps: 3,
+    };
     return {
       instruction: "Lesson complete — the training dummies will speak highly of you.",
       rule: "You can repeat this lesson, choose another subject, or continue to the next lesson.",
@@ -3546,34 +3564,45 @@ function tutorialCopy(): { instruction: string; rule: string; hint: string; step
         instruction: "Board the Longboat: select the Viking and move onto the boat.",
         rule: "Only sober friendly Vikings may embark. A Longboat carries up to three and always remains three squares wide.",
         hint: "Click the glowing Viking, then the highlighted centre of the boat.",
-        steps: 3,
+        steps: 4,
       };
       if (stage === 1) return {
         instruction: "Select the Longboat and sail east to the highlighted water square.",
         rule: "Longboats move up to nine squares through clear water. Their passengers and carried gold travel with them.",
         hint: "Click the glowing boat, then its highlighted destination farther right.",
-        steps: 3,
+        steps: 4,
       };
-      return {
+      if (stage === 2) return {
         instruction: "Select the Longboat, choose its passenger in the side panel, then place that Viking on the highlighted shore.",
         rule: "You choose exactly which passenger disembarks. The destination must be an open adjacent land or ice square.",
         hint: "Click the boat, click ‘Viking 1’ in the passenger list, then click the golden shore square above it.",
-        steps: 3,
+        steps: 4,
+      };
+      return {
+        instruction: "Now ram the enemy Longboat: select your glowing boat and sail into the highlighted ramming square.",
+        rule: "A Longboat that rams an enemy Longboat always wins. The enemy boat sinks, along with any crew or treasure aboard.",
+        hint: "Click your Blue Longboat, then the golden square touching the left side of the Red Longboat.",
+        steps: 4,
       };
     case "catapults":
-      return stage === 0
-        ? {
-            instruction: "Select the glowing Catapult and move it four squares east.",
-            rule: "Catapults occupy two horizontal squares and move up to nine. Moving immediately opens their one firing opportunity.",
-            hint: "Click the Catapult, then the highlighted square to its right.",
-            steps: 2,
-          }
-        : {
-            instruction: "Fire at the highlighted enemy Viking.",
-            rule: "A Catapult aims up to eleven squares away. The stone scatters, so the intended square and actual impact may differ.",
-            hint: "The Catapult is already in firing mode. Click the highlighted enemy square.",
-            steps: 2,
-          };
+      if (stage === 0) return {
+        instruction: "Select the glowing Catapult and move it four squares east.",
+        rule: "Catapults occupy two horizontal squares and move up to nine. Moving immediately opens their one firing opportunity.",
+        hint: "Click the Catapult, then the highlighted square to its right.",
+        steps: 3,
+      };
+      if (stage === 1) return {
+        instruction: "Fire at the highlighted enemy Viking.",
+        rule: "A Catapult aims up to eleven squares away. The stone scatters, so the intended square and actual impact may differ.",
+        hint: "The Catapult is already in firing mode. Click the highlighted enemy square.",
+        steps: 3,
+      };
+      return {
+        instruction: "Now use the glowing Red Viking to attack the Catapult directly.",
+        rule: "A Viking attacking an enemy Catapult always wins. No combat roll is made: the Catapult is destroyed.",
+        hint: "Click the Red Viking below the Catapult, then click the highlighted Catapult square.",
+        steps: 3,
+      };
     case "combat":
       return {
         instruction: "Move the glowing Blue Viking onto the highlighted enemy Viking.",
@@ -3685,13 +3714,29 @@ function checkTutorialProgress(): void {
       session.stage = 2;
       session.hintVisible = false;
       selectedUnitId = undefined;
-    } else if (session.stage === 2 && sailor && !sailor.embarkedOn && sailor.position.x === 17 && sailor.position.y === 10) completed = true;
+    } else if (session.stage === 2 && sailor && !sailor.embarkedOn && sailor.position.x === 17 && sailor.position.y === 10) {
+      session.stage = 3;
+      session.hintVisible = false;
+      if (boat) boat.moved = false;
+      selectedUnitId = undefined;
+    } else if (session.stage === 3 && boat?.position.x === 22 && boat.position.y === 11 && !unit("tutorial-enemy-boat")) completed = true;
   } else if (session.lessonId === "catapults") {
     const catapult = unit("tutorial-catapult");
     if (session.stage === 0 && catapult?.position.x === 11 && catapult.position.y === 12 && catapult.pendingFireAfterMove) {
       session.stage = 1;
       session.hintVisible = false;
-    } else if (session.stage === 1 && catapult?.fired) completed = true;
+    } else if (session.stage === 1 && catapult?.fired) {
+      session.stage = 2;
+      session.hintVisible = false;
+      gameState.activePlayerIndex = gameState.players.findIndex((player) => player.id === "red");
+      selectedUnitId = undefined;
+      interactionMode = "move";
+    } else if (
+      session.stage === 2 &&
+      !catapult &&
+      unit("tutorial-catapult-raider")?.position.x === 11 &&
+      unit("tutorial-catapult-raider")?.position.y === 12
+    ) completed = true;
   } else if (session.lessonId === "combat") {
     completed = !unit("tutorial-defender") && Boolean(unit("tutorial-attacker")?.veteran);
   } else if (session.lessonId === "castles") {
@@ -3749,7 +3794,11 @@ function renderTutorialCoach(): void {
   tutorialCoachInstruction.textContent = copy.instruction;
   tutorialCoachRule.textContent = tutorialSession.hintVisible ? `Hint: ${copy.hint}` : copy.rule;
   tutorialCompleteBanner.hidden = !tutorialSession.complete;
-  tutorialCompleteMessage.textContent = `${lesson.title} complete — the training dummies will speak highly of you.`;
+  tutorialCompleteMessage.textContent = tutorialSession.lessonId === "longboats"
+    ? "Enemy Longboat sunk. A ramming Longboat always wins and survives."
+    : tutorialSession.lessonId === "catapults"
+      ? "Catapult smashed. A Viking’s direct attack always destroys it."
+      : `${lesson.title} complete — the training dummies will speak highly of you.`;
   tutorialHintButton.hidden = tutorialSession.complete;
   tutorialHintButton.textContent = tutorialSession.hintVisible ? "Show rule" : "Show hint";
   tutorialRestartButton.hidden = false;
