@@ -72,6 +72,10 @@
               <span aria-hidden="true">ᚱ</span>
               Game Instructions
             </button>
+            <button id="open-tutorial" class="longhouse-link tutorial-link" type="button">
+              <span aria-hidden="true">⚔</span>
+              Learn to Raid
+            </button>
             <button class="longhouse-link" type="button" data-longhouse-page="acknowledgements">
               <span aria-hidden="true">✦</span>
               Acknowledgements
@@ -155,6 +159,23 @@
           </div>
         </section>
 
+        <section id="tutorial-hub" class="tutorial-hub" aria-labelledby="tutorial-hub-title" hidden>
+          <header class="tutorial-hub-header">
+            <div class="tutorial-hub-seal" aria-hidden="true">⚔</div>
+            <div>
+              <p class="eyebrow">Training ground</p>
+              <h2 id="tutorial-hub-title">Learn to Raid</h2>
+              <p>Seven short practical lessons using the real battlefield rules. Complete the whole course or choose the manoeuvre currently causing the most beard-stroking.</p>
+            </div>
+          </header>
+          <div class="tutorial-hub-actions">
+            <button id="start-tutorial-course" class="primary-button" type="button">Begin with movement</button>
+            <button id="close-tutorial-hub" class="secondary-button" type="button">Return to War Council</button>
+          </div>
+          <div id="tutorial-lesson-list" class="tutorial-lesson-list" aria-label="Tutorial lessons"></div>
+          <p class="tutorial-hub-note">Tutorial battles have fixed outcomes, no Saga Cards and no Winter. The training goat has been asked to remain outside.</p>
+        </section>
+
         <section id="game-shell" class="game-shell" aria-label="Game board" hidden>
           <div id="board-column" class="board-column">
             <div class="board-toolbar">
@@ -166,6 +187,21 @@
                 <div id="turn-badge" class="turn-badge">Blue turn</div>
               </div>
             </div>
+            <section id="tutorial-coach" class="tutorial-coach" aria-live="polite" hidden>
+              <div class="tutorial-coach-symbol" id="tutorial-coach-symbol" aria-hidden="true">⚔</div>
+              <div class="tutorial-coach-copy">
+                <p id="tutorial-coach-progress" class="eyebrow">Lesson 1 of 7</p>
+                <h2 id="tutorial-coach-title">Move Your Vikings</h2>
+                <p id="tutorial-coach-instruction"></p>
+                <p id="tutorial-coach-rule" class="tutorial-coach-rule"></p>
+              </div>
+              <div class="tutorial-coach-actions">
+                <button id="tutorial-hint" class="secondary-button" type="button">Show hint</button>
+                <button id="tutorial-restart" class="secondary-button" type="button">Restart lesson</button>
+                <button id="tutorial-next" class="primary-button" type="button" hidden>Next lesson</button>
+                <button id="tutorial-choose" class="text-button" type="button">Choose lesson</button>
+              </div>
+            </section>
             <div id="game-canvas" class="game-canvas" aria-label="Interactive battlefield"></div>
             <section id="horn-ceremony" class="horn-ceremony" aria-live="polite" hidden>
               <div>

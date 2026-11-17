@@ -64,6 +64,11 @@ import {
   stopBattleReportMusic,
   stopMenuMusic,
 } from "./audio";
+import {
+  TUTORIAL_LESSONS,
+  createTutorialGame,
+  type TutorialLessonId,
+} from "./tutorial";
 import type { Controller, EventCardId, EventDraw, EventEffect, GameState, PlayerId, PlayerSetup, Position, Terrain, TreasureChest, Unit, UnitType } from "./types";
 
 const PLAYER_OPTIONS: Array<{
@@ -99,6 +104,11 @@ const soundEffectsToggle = requireElement<HTMLInputElement>("sound-effects-enabl
 const musicToggle = requireElement<HTMLInputElement>("music-enabled");
 const winterToggle = requireElement<HTMLInputElement>("winter-enabled");
 const startButton = requireElement<HTMLButtonElement>("start-game");
+const openTutorialButton = requireElement<HTMLButtonElement>("open-tutorial");
+const tutorialHub = requireElement<HTMLElement>("tutorial-hub");
+const tutorialLessonList = requireElement<HTMLElement>("tutorial-lesson-list");
+const startTutorialCourseButton = requireElement<HTMLButtonElement>("start-tutorial-course");
+const closeTutorialHubButton = requireElement<HTMLButtonElement>("close-tutorial-hub");
 const mapPreview = requireElement<HTMLElement>("map-preview");
 const redrawMapButton = requireElement<HTMLButtonElement>("redraw-map");
 const acceptMapButton = requireElement<HTMLButtonElement>("accept-map");
@@ -117,6 +127,16 @@ const sagaDiscardState = requireElement<HTMLElement>("saga-discard-state");
 const humanTurnAnnouncement = requireElement<HTMLElement>("human-turn-announcement");
 const humanTurnTitle = requireElement<HTMLElement>("human-turn-title");
 const humanTurnCopy = requireElement<HTMLElement>("human-turn-copy");
+const tutorialCoach = requireElement<HTMLElement>("tutorial-coach");
+const tutorialCoachSymbol = requireElement<HTMLElement>("tutorial-coach-symbol");
+const tutorialCoachProgress = requireElement<HTMLElement>("tutorial-coach-progress");
+const tutorialCoachTitle = requireElement<HTMLElement>("tutorial-coach-title");
+const tutorialCoachInstruction = requireElement<HTMLElement>("tutorial-coach-instruction");
+const tutorialCoachRule = requireElement<HTMLElement>("tutorial-coach-rule");
+const tutorialHintButton = requireElement<HTMLButtonElement>("tutorial-hint");
+const tutorialRestartButton = requireElement<HTMLButtonElement>("tutorial-restart");
+const tutorialNextButton = requireElement<HTMLButtonElement>("tutorial-next");
+const tutorialChooseButton = requireElement<HTMLButtonElement>("tutorial-choose");
 const endTurnButton = requireElement<HTMLButtonElement>("end-turn");
 const newGameButton = requireElement<HTMLButtonElement>("new-game");
 const roundLabel = requireElement<HTMLElement>("round-label");
@@ -172,6 +192,84 @@ const longhousePages = Array.from(document.querySelectorAll<HTMLElement>("[data-
 type LonghousePage = "instructions" | "acknowledgements" | "feedback" | "privacy";
 const WEB3FORMS_ACCESS_KEY = "f8b0ab63-dde7-4ba9-a38c-b6d7ac963948";
 const HISTORY_VIEW_KEY = "vikingRaiderzView";
+const TUTORIAL_COMPLETION_KEY = "vikingRaiderzTutorialLessons";
+
+interface TutorialSession {
+  lessonId: TutorialLessonId;
+  stage: number;
+  complete: boolean;
+  hintVisible: boolean;
+}
+
+let tutorialSession: TutorialSession | undefined;
+let tutorialReturnToHub = false;
+let completedTutorialLessons = loadCompletedTutorialLessons();
+
+function loadCompletedTutorialLessons(): Set<TutorialLessonId> {
+  try {
+    const saved = JSON.parse(localStorage.getItem(TUTORIAL_COMPLETION_KEY) ?? "[]") as unknown;
+    if (!Array.isArray(saved)) return new Set();
+    const validIds = new Set(TUTORIAL_LESSONS.map((lesson) => lesson.id));
+    return new Set(saved.filter((id): id is TutorialLessonId => typeof id === "string" && validIds.has(id as TutorialLessonId)));
+  } catch {
+    return new Set();
+  }
+}
+
+function saveCompletedTutorialLessons(): void {
+  localStorage.setItem(TUTORIAL_COMPLETION_KEY, JSON.stringify([...completedTutorialLessons]));
+}
+
+type TutorialTargetKind = "move" | "fire" | "disembark";
+
+function tutorialExpectedTarget(kind: TutorialTargetKind): Position | undefined {
+  if (!tutorialSession) return undefined;
+  const { lessonId, stage } = tutorialSession;
+  if (kind === "move") {
+    if (lessonId === "movement") return stage === 0 ? { x: 11, y: 12 } : { x: 22, y: 12 };
+    if (lessonId === "drunkenness") return { x: 12, y: 12 };
+    if (lessonId === "longboats") return stage === 0 ? { x: 8, y: 11 } : stage === 1 ? { x: 17, y: 11 } : undefined;
+    if (lessonId === "catapults" && stage === 0) return { x: 11, y: 12 };
+    if (lessonId === "combat") return { x: 12, y: 12 };
+    if (lessonId === "castles") return { x: 26, y: 6 };
+  }
+  if (kind === "fire" && lessonId === "catapults" && stage === 1) return { x: 20, y: 12 };
+  if (kind === "disembark" && lessonId === "longboats" && stage === 2) return { x: 17, y: 10 };
+  return undefined;
+}
+
+function tutorialVisibleTargets(kind: TutorialTargetKind, positions: Position[]): Position[] {
+  if (!tutorialSession) return positions;
+  const target = tutorialExpectedTarget(kind);
+  if (!target || tutorialSession.complete) return [];
+  return positions.filter((position) => position.x === target.x && position.y === target.y);
+}
+
+function tutorialFocusUnitId(): string | undefined {
+  if (!tutorialSession || tutorialSession.complete) return undefined;
+  switch (tutorialSession.lessonId) {
+    case "movement": return "tutorial-mover";
+    case "drunkenness": return "tutorial-drinker";
+    case "longboats": return tutorialSession.stage === 0 ? "tutorial-sailor" : "tutorial-boat";
+    case "catapults": return "tutorial-catapult";
+    case "combat": return "tutorial-attacker";
+    case "castles": return "tutorial-sieger";
+    case "purchasing": return undefined;
+  }
+}
+
+function tutorialFocusPosition(): Position | undefined {
+  const id = tutorialFocusUnitId();
+  const unit = id ? gameState?.units.find((candidate) => candidate.id === id) : undefined;
+  return unit ? { ...unit.position } : undefined;
+}
+
+function tutorialAllowsBoardPosition(position: Position, clickedUnit?: Unit): boolean {
+  if (!tutorialSession || tutorialSession.complete) return !tutorialSession;
+  if (clickedUnit?.id === tutorialFocusUnitId()) return true;
+  const target = tutorialExpectedTarget(interactionMode);
+  return Boolean(target && target.x === position.x && target.y === position.y);
+}
 
 type VikingHistoryState = Record<string, unknown> & {
   [HISTORY_VIEW_KEY]?: "setup" | "game";
@@ -716,7 +814,7 @@ class BoardScene extends Phaser.Scene {
   create(): void {
     this.ready = true;
     this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
-      if (!gameState || graphicsShowcaseActive || mapPreviewActive || gameState.turnPhase !== "movement" || openingHornRunning || aiRunning || movementRunning || winterAnnouncementRunning || sagaEffectRunning || activePlayer(gameState).controller !== "human" || gameState.winnerId) return;
+      if (!gameState || graphicsShowcaseActive || mapPreviewActive || gameState.turnPhase !== "movement" || openingHornRunning || aiRunning || movementRunning || winterAnnouncementRunning || sagaEffectRunning || activePlayer(gameState).controller !== "human" || gameState.winnerId || tutorialSession?.complete) return;
       const position = this.boardPositionFromPointer(pointer);
       if (!position) return;
       if (position.x < 0 || position.y < 0 || position.x >= gameState.width || position.y >= gameState.height) return;
@@ -979,19 +1077,20 @@ class BoardScene extends Phaser.Scene {
     }
     const legalMoves = new Set(
       selectedUnitId && interactionMode === "move"
-        ? getLegalMoves(gameState, selectedUnitId).map(positionKey)
+        ? tutorialVisibleTargets("move", getLegalMoves(gameState, selectedUnitId)).map(positionKey)
         : [],
     );
     const fireTargets = new Set(
       selectedUnitId && interactionMode === "fire"
-        ? getCatapultFireCells(gameState, selectedUnitId).map(positionKey)
+        ? tutorialVisibleTargets("fire", getCatapultFireCells(gameState, selectedUnitId)).map(positionKey)
         : [],
     );
     const disembarkTargets = new Set(
       selectedUnitId && interactionMode === "disembark"
-        ? getDisembarkCells(gameState, selectedUnitId).map(positionKey)
+        ? tutorialVisibleTargets("disembark", getDisembarkCells(gameState, selectedUnitId)).map(positionKey)
         : [],
     );
+    const tutorialFocus = tutorialFocusPosition();
     const fromWinterPhase = this.winterTransition?.fromPhase ?? presentedWinterPhase;
     const toWinterPhase = this.winterTransition?.toPhase ?? presentedWinterPhase;
     const winterFade = this.winterTransition?.progress ?? 1;
@@ -1047,6 +1146,21 @@ class BoardScene extends Phaser.Scene {
             graphics.fillStyle(0xd9fff1, 0.9);
             graphics.fillTriangle(centreX - 4, centreY + 4, centreX + 4, centreY + 4, centreX, centreY - 5);
           }
+        }
+        if (tutorialFocus && tutorialFocus.x === x && tutorialFocus.y === y) {
+          const pulse = 0.68 + Math.sin(this.shorelineRipplePhase * 1.2) * 0.12;
+          graphics.lineStyle(3, 0xffd259, pulse);
+          graphics.strokeCircle(
+            x * this.tileSize + this.tileSize / 2,
+            y * this.tileSize + this.tileSize / 2,
+            this.tileSize * 0.39,
+          );
+          graphics.fillStyle(0xfff1aa, 0.18);
+          graphics.fillCircle(
+            x * this.tileSize + this.tileSize / 2,
+            y * this.tileSize + this.tileSize / 2,
+            this.tileSize * 0.33,
+          );
         }
       }
     }
@@ -3073,6 +3187,7 @@ function handleBoardSelection(position: Position): void {
   if (!gameState || gameState.turnPhase !== "movement" || drunkMoveRunning || movementRunning || winterAnnouncementRunning || sagaEffectRunning) return;
   const player = activePlayer(gameState);
   const clickedUnit = unitAt(gameState, position);
+  if (!tutorialAllowsBoardPosition(position, clickedUnit)) return;
 
   if (selectedUnitId && interactionMode === "disembark") {
     const boat = gameState.units.find((unit) => unit.id === selectedUnitId && unit.type === "longboat");
@@ -3354,8 +3469,252 @@ function renderTurnOrder(state: GameState): void {
   }).join("");
 }
 
+function tutorialCopy(): { instruction: string; rule: string; hint: string; steps: number } {
+  if (!tutorialSession) return { instruction: "", rule: "", hint: "", steps: 1 };
+  const { lessonId, stage, complete } = tutorialSession;
+  if (complete) {
+    return {
+      instruction: "Lesson complete — the training dummies will speak highly of you.",
+      rule: "You can repeat this lesson, choose another subject, or continue to the next lesson.",
+      hint: "The hard part is remembering which end of the axe to hold.",
+      steps: Math.max(1, stage + 1),
+    };
+  }
+  switch (lessonId) {
+    case "movement":
+      return stage === 0
+        ? {
+            instruction: "Select the glowing Blue Viking, then move to the single golden square six spaces east.",
+            rule: "Vikings move in straight horizontal, vertical or diagonal lines. A voluntary move may be up to nine squares.",
+            hint: "Click the Viking once, then click the highlighted square to the right.",
+            steps: 2,
+          }
+        : {
+            instruction: "Now make the long run east to the treasure chest.",
+            rule: "A Viking may run beyond nine squares only when the first blocking object ends the run. Clear squares beyond nine are not destinations.",
+            hint: "Select the same Viking again, then click the distant golden chest square.",
+            steps: 2,
+          };
+    case "drunkenness":
+      return {
+        instruction: "Move the glowing Viking east onto the Drinking Horn.",
+        rule: "A horn stops a Viking immediately. They become drunk, drop carried treasure, cannot board, and stagger automatically next turn.",
+        hint: "Select the Viking, then click the highlighted horn square.",
+        steps: 1,
+      };
+    case "longboats":
+      if (stage === 0) return {
+        instruction: "Board the Longboat: select the Viking and move onto the boat.",
+        rule: "Only sober friendly Vikings may embark. A Longboat carries up to three and always remains three squares wide.",
+        hint: "Click the glowing Viking, then the highlighted centre of the boat.",
+        steps: 3,
+      };
+      if (stage === 1) return {
+        instruction: "Select the Longboat and sail east to the highlighted water square.",
+        rule: "Longboats move up to nine squares through clear water. Their passengers and carried gold travel with them.",
+        hint: "Click the glowing boat, then its highlighted destination farther right.",
+        steps: 3,
+      };
+      return {
+        instruction: "Select the Longboat, choose its passenger in the side panel, then place that Viking on the highlighted shore.",
+        rule: "You choose exactly which passenger disembarks. The destination must be an open adjacent land or ice square.",
+        hint: "Click the boat, click ‘Viking 1’ in the passenger list, then click the golden shore square above it.",
+        steps: 3,
+      };
+    case "catapults":
+      return stage === 0
+        ? {
+            instruction: "Select the glowing Catapult and move it four squares east.",
+            rule: "Catapults occupy two horizontal squares and move up to nine. Moving immediately opens their one firing opportunity.",
+            hint: "Click the Catapult, then the highlighted square to its right.",
+            steps: 2,
+          }
+        : {
+            instruction: "Fire at the highlighted enemy Viking.",
+            rule: "A Catapult aims up to eleven squares away. The stone scatters, so the intended square and actual impact may differ.",
+            hint: "The Catapult is already in firing mode. Click the highlighted enemy square.",
+            steps: 2,
+          };
+    case "combat":
+      return {
+        instruction: "Move the glowing Blue Viking onto the highlighted enemy Viking.",
+        rule: "Entering an enemy Viking’s square starts direct combat. A surviving winner is promoted to Veteran.",
+        hint: "Select Blue, then click the Red Viking. This demonstration has a fixed outcome.",
+        steps: 1,
+      };
+    case "castles":
+      return {
+        instruction: "Send the glowing Veteran straight east to attack the highlighted castle.",
+        rule: "A castle attacker stops beside the walls while the three-second siege resolves. Victory captures the castle; defeat removes the attacker.",
+        hint: "Select the Veteran, then click the Red castle itself. This training siege has a fixed victory.",
+        steps: 1,
+      };
+    case "purchasing":
+      if (stage === 0) return {
+        instruction: "Press Viking Manoeuvres Complete to commit the movement and combat phase.",
+        rule: "Purchasing remains locked until manoeuvres are committed. You cannot return to movement afterwards.",
+        hint: "Use the large gold button in the command panel.",
+        steps: 3,
+      };
+      if (stage === 1) return {
+        instruction: "Buy one Viking from the war chest.",
+        rule: "Purchased units cost gold and appear on a clear legal square directly beside your home castle.",
+        hint: "Press the Viking purchase row. The other purchases are locked for this lesson.",
+        steps: 3,
+      };
+      return {
+        instruction: "Press Loot Spending Complete to end the purchase phase and finish the turn.",
+        rule: "A normal match now resolves any scheduled Saga Card, then passes play to the next faction.",
+        hint: "Use the large gold button once more.",
+        steps: 3,
+      };
+  }
+}
+
+function checkTutorialProgress(): void {
+  if (!tutorialSession || !gameState || tutorialSession.complete) return;
+  const session = tutorialSession;
+  const unit = (id: string) => gameState!.units.find((candidate) => candidate.id === id);
+  let completed = false;
+
+  if (session.lessonId === "movement") {
+    const mover = unit("tutorial-mover");
+    if (session.stage === 0 && mover?.position.x === 11 && mover.position.y === 12) {
+      session.stage = 1;
+      session.hintVisible = false;
+      mover.moved = false;
+      gameState.treasures.push({ id: "tutorial-running-chest", value: 10, position: { x: 22, y: 12 } });
+      selectedUnitId = undefined;
+    } else if (session.stage === 1 && mover?.position.x === 22 && carriedTreasure(gameState, mover.id)) completed = true;
+  } else if (session.lessonId === "drunkenness") {
+    completed = Boolean(unit("tutorial-drinker")?.drunk);
+  } else if (session.lessonId === "longboats") {
+    const sailor = unit("tutorial-sailor");
+    const boat = unit("tutorial-boat");
+    if (session.stage === 0 && sailor?.embarkedOn === boat?.id) {
+      session.stage = 1;
+      session.hintVisible = false;
+      if (boat) boat.moved = false;
+      selectedUnitId = undefined;
+    } else if (session.stage === 1 && boat?.position.x === 17 && boat.position.y === 11) {
+      session.stage = 2;
+      session.hintVisible = false;
+      selectedUnitId = undefined;
+    } else if (session.stage === 2 && sailor && !sailor.embarkedOn && sailor.position.x === 17 && sailor.position.y === 10) completed = true;
+  } else if (session.lessonId === "catapults") {
+    const catapult = unit("tutorial-catapult");
+    if (session.stage === 0 && catapult?.position.x === 11 && catapult.position.y === 12 && catapult.pendingFireAfterMove) {
+      session.stage = 1;
+      session.hintVisible = false;
+    } else if (session.stage === 1 && catapult?.fired) completed = true;
+  } else if (session.lessonId === "combat") {
+    completed = !unit("tutorial-defender") && Boolean(unit("tutorial-attacker")?.veteran);
+  } else if (session.lessonId === "castles") {
+    completed = Boolean(gameState.players.find((player) => player.id === "red")?.eliminated);
+  } else if (session.lessonId === "purchasing") {
+    const purchases = gameState.battleStats.blue?.unitsPurchased.soldier ?? 0;
+    if (session.stage === 0 && gameState.turnPhase === "purchase") {
+      session.stage = 1;
+      session.hintVisible = false;
+    } else if (session.stage === 1 && purchases > 0) {
+      session.stage = 2;
+      session.hintVisible = false;
+    } else if (session.stage === 2 && gameState.completedTurns > 0) completed = true;
+  }
+
+  if (completed) {
+    if (session.lessonId === "purchasing") gameState.activePlayerIndex = 0;
+    session.complete = true;
+    session.hintVisible = false;
+    selectedUnitId = undefined;
+    selectedPassengerId = undefined;
+    interactionMode = "move";
+    completedTutorialLessons.add(session.lessonId);
+    saveCompletedTutorialLessons();
+  }
+}
+
+function renderTutorialCoach(): void {
+  if (!tutorialSession) {
+    tutorialCoach.hidden = true;
+    return;
+  }
+  const lessonIndex = TUTORIAL_LESSONS.findIndex((lesson) => lesson.id === tutorialSession!.lessonId);
+  const lesson = TUTORIAL_LESSONS[lessonIndex]!;
+  const copy = tutorialCopy();
+  tutorialCoach.hidden = false;
+  tutorialCoachSymbol.textContent = lesson.symbol;
+  tutorialCoachProgress.textContent = tutorialSession.complete
+    ? `Lesson ${lesson.number} of ${TUTORIAL_LESSONS.length} · Complete`
+    : `Lesson ${lesson.number} of ${TUTORIAL_LESSONS.length} · Step ${tutorialSession.stage + 1} of ${copy.steps}`;
+  tutorialCoachTitle.textContent = lesson.title;
+  tutorialCoachInstruction.textContent = copy.instruction;
+  tutorialCoachRule.textContent = tutorialSession.hintVisible ? `Hint: ${copy.hint}` : copy.rule;
+  tutorialHintButton.hidden = tutorialSession.complete;
+  tutorialHintButton.textContent = tutorialSession.hintVisible ? "Show rule" : "Show hint";
+  tutorialRestartButton.hidden = false;
+  tutorialNextButton.hidden = !tutorialSession.complete;
+  tutorialNextButton.textContent = lessonIndex === TUTORIAL_LESSONS.length - 1 ? "Finish training" : "Next lesson";
+}
+
+function renderTutorialHub(): void {
+  tutorialLessonList.innerHTML = TUTORIAL_LESSONS.map((lesson) => {
+    const complete = completedTutorialLessons.has(lesson.id);
+    return `
+      <button class="tutorial-lesson-button${complete ? " is-complete" : ""}" type="button" data-tutorial-lesson="${lesson.id}">
+        <span class="tutorial-lesson-symbol" aria-hidden="true">${lesson.symbol}</span>
+        <span class="tutorial-lesson-copy"><strong>${lesson.number}. ${lesson.title}</strong><small>${lesson.summary}</small></span>
+        <span class="tutorial-lesson-time">${lesson.estimatedTime}${complete ? '<br><span class="tutorial-complete-mark">✓ Practised</span>' : ""}</span>
+      </button>
+    `;
+  }).join("");
+}
+
+function openTutorialHub(): void {
+  stopBattleReportMusic();
+  tutorialSession = undefined;
+  tutorialCoach.hidden = true;
+  heritageNote.hidden = true;
+  setup.hidden = true;
+  gameShell.hidden = true;
+  tutorialHub.hidden = false;
+  renderTutorialHub();
+  startMenuMusic();
+}
+
+function startTutorialLesson(lessonId: TutorialLessonId): void {
+  stopMenuMusic();
+  setSoundEffectsEnabled(soundEffectsToggle.checked);
+  setMusicEnabled(musicToggle.checked);
+  tutorialSession = { lessonId, stage: 0, complete: false, hintVisible: false };
+  tutorialReturnToHub = false;
+  gameState = createTutorialGame(lessonId);
+  resetMatchPresentation();
+  mapPreviewActive = false;
+  mapPreview.hidden = true;
+  heritageNote.hidden = true;
+  setup.hidden = true;
+  tutorialHub.hidden = true;
+  gameShell.hidden = false;
+  newGameButton.textContent = "Return to War Council";
+  ensureBoard();
+  if (currentHistoryState()[HISTORY_VIEW_KEY] !== "game") setHistoryView("game", "push");
+  updateAll();
+}
+
+function requestTutorialHub(): void {
+  if (currentHistoryState()[HISTORY_VIEW_KEY] === "game") {
+    tutorialReturnToHub = true;
+    history.back();
+    return;
+  }
+  returnToSetup();
+  openTutorialHub();
+}
+
 function updateAll(): void {
   if (!gameState) return;
+  checkTutorialProgress();
   const player = activePlayer(gameState);
   renderTurnOrder(gameState);
   if (mapPreviewActive) {
@@ -3382,8 +3741,9 @@ function updateAll(): void {
     if (boardScene?.isReady()) boardScene.renderBoard();
     return;
   }
-  updateSagaTable();
-  const finishedWinner = !movementRunning && !castleAssaultRunning ? gameState.winnerId : undefined;
+  if (tutorialSession) sagaTable.hidden = true;
+  else updateSagaTable();
+  const finishedWinner = !tutorialSession && !movementRunning && !castleAssaultRunning ? gameState.winnerId : undefined;
   viewBattleReportButton.hidden = !finishedWinner;
   if (finishedWinner && presentedBattleReportFor !== finishedWinner) {
     presentedBattleReportFor = finishedWinner;
@@ -3391,10 +3751,14 @@ function updateAll(): void {
     battleReport.hidden = false;
     startBattleReportMusic();
   }
-  roundLabel.textContent = gameState.winterPhase > 0
-    ? `Round ${gameState.round} · Winter ${gameState.winterPhase}/${WINTER_PHASES}`
-    : `Round ${gameState.round}`;
-  turnBadge.textContent = gameState.winnerId && !castleAssaultRunning
+  roundLabel.textContent = tutorialSession
+    ? "Training ground"
+    : gameState.winterPhase > 0
+      ? `Round ${gameState.round} · Winter ${gameState.winterPhase}/${WINTER_PHASES}`
+      : `Round ${gameState.round}`;
+  turnBadge.textContent = tutorialSession
+    ? `Lesson ${TUTORIAL_LESSONS.find((lesson) => lesson.id === tutorialSession!.lessonId)?.number ?? ""} · Practice`
+    : gameState.winnerId && !castleAssaultRunning
     ? "Saga complete"
     : `${player.name} · ${gameState.turnPhase === "movement" ? "Manoeuvres" : "Loot spending"}`;
   turnBadge.style.setProperty("--turn-color", player.cssColor);
@@ -3483,14 +3847,21 @@ function updateAll(): void {
           ? "No further unit movement is available. Press Viking Manoeuvres Complete to open the purchase phase."
           : "Viking Manoeuvres: select units in any order. Soldiers may choose 0–9 spaces, or run to the next object; other units move up to nine spaces.";
 
-  const humanTurn = player.controller === "human" && !openingHornRunning && !aiRunning && !drunkMoveRunning && !movementRunning && !winterAnnouncementRunning && !sagaEffectRunning && !humanTurnAnnouncementRunning && !gameState.winnerId;
-  endTurnButton.disabled = !humanTurn;
+  const humanTurn = player.controller === "human" && !openingHornRunning && !aiRunning && !drunkMoveRunning && !movementRunning && !winterAnnouncementRunning && !sagaEffectRunning && !humanTurnAnnouncementRunning && !gameState.winnerId && !tutorialSession?.complete;
+  const tutorialCanEndPhase = !tutorialSession || (
+    tutorialSession.lessonId === "purchasing" &&
+    (tutorialSession.stage === 0 || tutorialSession.stage === 2)
+  );
+  endTurnButton.disabled = !humanTurn || !tutorialCanEndPhase;
   endTurnButton.textContent = gameState.turnPhase === "movement"
     ? "Viking Manoeuvres Complete"
     : "Loot Spending Complete";
   for (const button of purchaseButtons) {
     const type = button.dataset.unit as UnitType;
-    button.disabled = !humanTurn || gameState.turnPhase !== "purchase" || !canBuyUnit(gameState, player.id, type);
+    const tutorialCanBuy = !tutorialSession || (
+      tutorialSession.lessonId === "purchasing" && tutorialSession.stage === 1 && type === "soldier"
+    );
+    button.disabled = !humanTurn || !tutorialCanBuy || gameState.turnPhase !== "purchase" || !canBuyUnit(gameState, player.id, type);
   }
 
   const visibleLog = castleAssaultRunning
@@ -3501,6 +3872,15 @@ function updateAll(): void {
     .map((entry) => `<li>${entry}</li>`)
     .join("");
   if (boardScene?.isReady()) boardScene.renderBoard();
+
+  if (tutorialSession) {
+    const copy = tutorialCopy();
+    boardHelp.textContent = copy.instruction;
+    viewBattleReportButton.hidden = true;
+    skipCatapultFireButton.hidden = true;
+    renderTutorialCoach();
+    return;
+  }
 
   if (syncEventReveal()) return;
 
@@ -4037,6 +4417,7 @@ function returnToSetup(): void {
   sagaEffectRunning = false;
   concealedCastleLog = undefined;
   gameState = undefined;
+  tutorialSession = undefined;
   selectedUnitId = undefined;
   selectedPassengerId = undefined;
   interactionMode = "move";
@@ -4068,14 +4449,46 @@ function returnToSetup(): void {
   phaserGame = undefined;
   boardScene = undefined;
   gameShell.hidden = true;
+  tutorialHub.hidden = true;
+  tutorialCoach.hidden = true;
   setup.hidden = false;
   heritageNote.hidden = false;
+  newGameButton.textContent = "Return to War Council";
   startMenuMusic();
   validateSetups();
 }
 
 slots.addEventListener("change", validateSetups);
 startButton.addEventListener("click", startGame);
+openTutorialButton.addEventListener("click", openTutorialHub);
+closeTutorialHubButton.addEventListener("click", () => {
+  tutorialHub.hidden = true;
+  setup.hidden = false;
+  heritageNote.hidden = false;
+  validateSetups();
+});
+startTutorialCourseButton.addEventListener("click", () => startTutorialLesson("movement"));
+tutorialLessonList.addEventListener("click", (event) => {
+  const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-tutorial-lesson]");
+  const lessonId = button?.dataset.tutorialLesson as TutorialLessonId | undefined;
+  if (lessonId && TUTORIAL_LESSONS.some((lesson) => lesson.id === lessonId)) startTutorialLesson(lessonId);
+});
+tutorialHintButton.addEventListener("click", () => {
+  if (!tutorialSession) return;
+  tutorialSession.hintVisible = !tutorialSession.hintVisible;
+  updateAll();
+});
+tutorialRestartButton.addEventListener("click", () => {
+  if (tutorialSession) startTutorialLesson(tutorialSession.lessonId);
+});
+tutorialNextButton.addEventListener("click", () => {
+  if (!tutorialSession?.complete) return;
+  const index = TUTORIAL_LESSONS.findIndex((lesson) => lesson.id === tutorialSession!.lessonId);
+  const next = TUTORIAL_LESSONS[index + 1];
+  if (next) startTutorialLesson(next.id);
+  else requestTutorialHub();
+});
+tutorialChooseButton.addEventListener("click", requestTutorialHub);
 redrawMapButton.addEventListener("click", () => {
   if (!mapPreviewActive) return;
   createFreshMatch();
@@ -4234,7 +4647,10 @@ window.addEventListener("popstate", (event) => {
     return;
   }
 
+  const shouldOpenTutorialHub = Boolean(tutorialSession && tutorialReturnToHub);
   returnToSetup();
+  tutorialReturnToHub = false;
+  if (shouldOpenTutorialHub) openTutorialHub();
   if (historyView !== "setup") setHistoryView("setup", "replace");
 });
 
