@@ -1162,6 +1162,58 @@ main {
   grid-column: 1 / -1;
 }
 
+.tutorial-complete-banner {
+  position: absolute;
+  z-index: 18;
+  top: 48%;
+  left: 50%;
+  width: min(30rem, calc(100% - 2rem));
+  padding: 1.25rem 1.5rem 1.35rem;
+  transform: translate(-50%, -50%);
+  border: 3px solid #d49a2f;
+  border-radius: 20px;
+  color: #173c49;
+  text-align: center;
+  background: linear-gradient(145deg, #fff9d9, #e8f5d4 58%, #ccebdd);
+  box-shadow: 0 18px 60px rgba(17, 55, 65, 0.38), inset 0 0 0 5px rgba(255, 255, 255, 0.56);
+  pointer-events: none;
+  animation: tutorial-complete-arrival 520ms cubic-bezier(.18,.82,.24,1.18) both;
+}
+
+.tutorial-complete-banner h2,
+.tutorial-complete-banner p {
+  margin: 0;
+}
+
+.tutorial-complete-banner h2 {
+  margin: 0.1rem 0 0.35rem;
+  color: #276a70;
+  font-family: "Almendra", Georgia, serif;
+  font-size: clamp(2.1rem, 5vw, 3.4rem);
+}
+
+.tutorial-complete-banner > p:not(.eyebrow) {
+  font-weight: 750;
+}
+
+.tutorial-complete-banner small {
+  display: block;
+  margin-top: 0.55rem;
+  color: var(--muted);
+}
+
+.tutorial-complete-runes {
+  color: #b87921;
+  font-size: 1.15rem;
+  letter-spacing: 0.35em;
+}
+
+@keyframes tutorial-complete-arrival {
+  from { opacity: 0; transform: translate(-50%, -42%) scale(0.78) rotate(-1deg); }
+  70% { opacity: 1; transform: translate(-50%, -52%) scale(1.035) rotate(0.4deg); }
+  to { opacity: 1; transform: translate(-50%, -50%) scale(1) rotate(0); }
+}
+
 .round-label {
   font-weight: 700;
 }

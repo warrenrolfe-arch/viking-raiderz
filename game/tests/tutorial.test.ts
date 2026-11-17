@@ -28,8 +28,20 @@ describe("interactive tutorial scenarios", () => {
 
   it("uses the real movement and Drinking Horn rules", () => {
     const movement = createTutorialGame("movement");
-    expect(hasMove(movement, "tutorial-mover", 11, 12)).toBe(true);
-    expect(moveUnit(movement, "tutorial-mover", { x: 11, y: 12 })).toBe(true);
+    const mover = movement.units.find((unit) => unit.id === "tutorial-mover")!;
+    expect(moveUnit(movement, mover.id, { x: 9, y: 9 })).toBe(true);
+    mover.moved = false;
+    expect(moveUnit(movement, mover.id, { x: 18, y: 9 })).toBe(true);
+    mover.moved = false;
+    expect(hasMove(movement, mover.id, 18, 19)).toBe(true);
+    expect(hasMove(movement, mover.id, 18, 20)).toBe(false);
+    expect(moveUnit(movement, mover.id, { x: 18, y: 19 })).toBe(true);
+    mover.moved = false;
+    expect(moveUnit(movement, mover.id, { x: 0, y: 19 })).toBe(true);
+    mover.moved = false;
+    movement.drinkingHorns.push({ id: "tutorial-running-horn", position: { x: 12, y: 19 } });
+    expect(moveUnit(movement, mover.id, { x: 12, y: 19 })).toBe(true);
+    expect(mover.drunk).toBe(true);
 
     const drinking = createTutorialGame("drunkenness");
     expect(moveUnit(drinking, "tutorial-drinker", { x: 12, y: 12 })).toBe(true);

@@ -55,6 +55,7 @@ import {
   playGoldBanked,
   playShipSinking,
   playSoberingUp,
+  playTutorialComplete,
   playWinterWind,
   primeAudio,
   setMusicEnabled,
@@ -137,6 +138,8 @@ const tutorialHintButton = requireElement<HTMLButtonElement>("tutorial-hint");
 const tutorialRestartButton = requireElement<HTMLButtonElement>("tutorial-restart");
 const tutorialNextButton = requireElement<HTMLButtonElement>("tutorial-next");
 const tutorialChooseButton = requireElement<HTMLButtonElement>("tutorial-choose");
+const tutorialCompleteBanner = requireElement<HTMLElement>("tutorial-complete-banner");
+const tutorialCompleteMessage = requireElement<HTMLElement>("tutorial-complete-message");
 const endTurnButton = requireElement<HTMLButtonElement>("end-turn");
 const newGameButton = requireElement<HTMLButtonElement>("new-game");
 const roundLabel = requireElement<HTMLElement>("round-label");
@@ -226,7 +229,16 @@ function tutorialExpectedTarget(kind: TutorialTargetKind): Position | undefined 
   if (!tutorialSession) return undefined;
   const { lessonId, stage } = tutorialSession;
   if (kind === "move") {
-    if (lessonId === "movement") return stage === 0 ? { x: 11, y: 12 } : { x: 22, y: 12 };
+    if (lessonId === "movement") {
+      const targets: Position[] = [
+        { x: 9, y: 9 },
+        { x: 18, y: 9 },
+        { x: 18, y: 19 },
+        { x: 0, y: 19 },
+        { x: 12, y: 19 },
+      ];
+      return targets[stage];
+    }
     if (lessonId === "drunkenness") return { x: 12, y: 12 };
     if (lessonId === "longboats") return stage === 0 ? { x: 8, y: 11 } : stage === 1 ? { x: 17, y: 11 } : undefined;
     if (lessonId === "catapults" && stage === 0) return { x: 11, y: 12 };
@@ -3482,19 +3494,36 @@ function tutorialCopy(): { instruction: string; rule: string; hint: string; step
   }
   switch (lessonId) {
     case "movement":
-      return stage === 0
-        ? {
-            instruction: "Select the glowing Blue Viking, then move to the single golden square six spaces east.",
-            rule: "Vikings move in straight horizontal, vertical or diagonal lines. A voluntary move may be up to nine squares.",
-            hint: "Click the Viking once, then click the highlighted square to the right.",
-            steps: 2,
-          }
-        : {
-            instruction: "Now make the long run east to the treasure chest.",
-            rule: "A Viking may run beyond nine squares only when the first blocking object ends the run. Clear squares beyond nine are not destinations.",
-            hint: "Select the same Viking again, then click the distant golden chest square.",
-            steps: 2,
-          };
+      if (stage === 0) return {
+        instruction: "Select the glowing Blue Viking and move diagonally down-right to the golden square.",
+        rule: "Vikings move in straight horizontal, vertical or diagonal lines.",
+        hint: "Click the Viking, then the highlighted square four columns right and four rows down.",
+        steps: 5,
+      };
+      if (stage === 1) return {
+        instruction: "Now move exactly nine squares east.",
+        rule: "Nine squares is the furthest voluntary move. A clear tenth square cannot be chosen merely because it is empty.",
+        hint: "Select the Viking again, then click the highlighted square nine spaces to the right.",
+        steps: 5,
+      };
+      if (stage === 2) return {
+        instruction: "Run south until the water stops the Viking.",
+        rule: "When the first obstruction lies beyond nine squares, a Viking may make a forced run to the last clear square before impassable water.",
+        hint: "Select the Viking and click the highlighted land square immediately above the water.",
+        steps: 5,
+      };
+      if (stage === 3) return {
+        instruction: "Run west to the edge of the map.",
+        rule: "The board edge also ends a forced run. The Viking stops on the final square rather than wandering into the margins.",
+        hint: "Select the Viking and click the highlighted square on the far left edge.",
+        steps: 5,
+      };
+      return {
+        instruction: "Finally, run east to the Drinking Horn that has appeared.",
+        rule: "A Drinking Horn is an object a Viking may run to beyond nine squares. They stop on it, drink it, and become drunk.",
+        hint: "Select the Viking, then click the highlighted horn twelve squares east.",
+        steps: 5,
+      };
     case "drunkenness":
       return {
         instruction: "Move the glowing Viking east onto the Drinking Horn.",
@@ -3597,13 +3626,28 @@ function checkTutorialProgress(): void {
 
   if (session.lessonId === "movement") {
     const mover = unit("tutorial-mover");
-    if (session.stage === 0 && mover?.position.x === 11 && mover.position.y === 12) {
+    if (session.stage === 0 && mover?.position.x === 9 && mover.position.y === 9) {
       session.stage = 1;
       session.hintVisible = false;
       mover.moved = false;
-      gameState.treasures.push({ id: "tutorial-running-chest", value: 10, position: { x: 22, y: 12 } });
       selectedUnitId = undefined;
-    } else if (session.stage === 1 && mover?.position.x === 22 && carriedTreasure(gameState, mover.id)) completed = true;
+    } else if (session.stage === 1 && mover?.position.x === 18 && mover.position.y === 9) {
+      session.stage = 2;
+      session.hintVisible = false;
+      mover.moved = false;
+      selectedUnitId = undefined;
+    } else if (session.stage === 2 && mover?.position.x === 18 && mover.position.y === 19) {
+      session.stage = 3;
+      session.hintVisible = false;
+      mover.moved = false;
+      selectedUnitId = undefined;
+    } else if (session.stage === 3 && mover?.position.x === 0 && mover.position.y === 19) {
+      session.stage = 4;
+      session.hintVisible = false;
+      mover.moved = false;
+      gameState.drinkingHorns.push({ id: "tutorial-running-horn", position: { x: 12, y: 19 } });
+      selectedUnitId = undefined;
+    } else if (session.stage === 4 && mover?.position.x === 12 && mover.position.y === 19 && mover.drunk) completed = true;
   } else if (session.lessonId === "drunkenness") {
     completed = Boolean(unit("tutorial-drinker")?.drunk);
   } else if (session.lessonId === "longboats") {
@@ -3661,6 +3705,7 @@ function checkTutorialProgress(): void {
     interactionMode = "move";
     completedTutorialLessons.add(session.lessonId);
     saveCompletedTutorialLessons();
+    playTutorialComplete();
   }
 }
 
@@ -3680,6 +3725,8 @@ function renderTutorialCoach(): void {
   tutorialCoachTitle.textContent = lesson.title;
   tutorialCoachInstruction.textContent = copy.instruction;
   tutorialCoachRule.textContent = tutorialSession.hintVisible ? `Hint: ${copy.hint}` : copy.rule;
+  tutorialCompleteBanner.hidden = !tutorialSession.complete;
+  tutorialCompleteMessage.textContent = `${lesson.title} complete — the training dummies will speak highly of you.`;
   tutorialHintButton.hidden = tutorialSession.complete;
   tutorialHintButton.textContent = tutorialSession.hintVisible ? "Show rule" : "Show hint";
   tutorialRestartButton.hidden = false;
@@ -3704,6 +3751,7 @@ function openTutorialHub(): void {
   stopBattleReportMusic();
   tutorialSession = undefined;
   tutorialCoach.hidden = true;
+  tutorialCompleteBanner.hidden = true;
   heritageNote.hidden = true;
   setup.hidden = true;
   gameShell.hidden = true;
@@ -4488,6 +4536,7 @@ function returnToSetup(): void {
   gameShell.hidden = true;
   tutorialHub.hidden = true;
   tutorialCoach.hidden = true;
+  tutorialCompleteBanner.hidden = true;
   setup.hidden = false;
   heritageNote.hidden = false;
   newGameButton.textContent = "Return to War Council";

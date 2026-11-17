@@ -25,8 +25,8 @@ export const TUTORIAL_LESSONS: readonly TutorialLesson[] = [
     number: 1,
     symbol: "➜",
     title: "Move Your Vikings",
-    summary: "Straight lines, the nine-square limit and a long run to the first object.",
-    estimatedTime: "about 1 minute",
+    summary: "Diagonal movement, the nine-square limit, and forced stops at water, edges and horns.",
+    estimatedTime: "about 2 minutes",
   },
   {
     id: "drunkenness",
@@ -150,8 +150,9 @@ export function createTutorialGame(lessonId: TutorialLessonId): GameState {
 
   switch (lessonId) {
     case "movement":
-      addUnit(state, "tutorial-mover", "blue", "soldier", { x: 5, y: 12 });
-      state.log = ["Select the Blue Viking and move six squares east."];
+      addUnit(state, "tutorial-mover", "blue", "soldier", { x: 5, y: 5 });
+      for (let x = 16; x <= 20; x += 1) setTerrain(state, { x, y: 20 }, "water");
+      state.log = ["Begin the movement course with a diagonal move."];
       break;
 
     case "drunkenness":

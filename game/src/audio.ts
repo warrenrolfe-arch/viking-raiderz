@@ -318,6 +318,38 @@ export function playDirectCombatOutcome(attackerWon: boolean): void {
   crowd.start(now);
 }
 
+/** A brief, friendly flourish confirming that a practical lesson is complete. */
+export function playTutorialComplete(): void {
+  const context = usableContext();
+  if (!context || !masterGain) return;
+  const now = context.currentTime;
+  const notes = [392, 523, 659, 784];
+  for (const [index, frequency] of notes.entries()) {
+    const voice = context.createOscillator();
+    const gain = context.createGain();
+    const start = now + index * 0.085;
+    voice.type = index < 3 ? "triangle" : "sine";
+    voice.frequency.setValueAtTime(frequency, start);
+    gain.gain.setValueAtTime(0.001, start);
+    gain.gain.exponentialRampToValueAtTime(index === 3 ? 0.16 : 0.105, start + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.001, start + (index === 3 ? 0.34 : 0.2));
+    voice.connect(gain).connect(masterGain);
+    voice.start(start);
+    voice.stop(start + (index === 3 ? 0.36 : 0.22));
+  }
+  const cheer = noiseSource(context, 0.42);
+  const filter = context.createBiquadFilter();
+  const cheerGain = context.createGain();
+  filter.type = "bandpass";
+  filter.frequency.value = 1_250;
+  filter.Q.value = 0.65;
+  cheerGain.gain.setValueAtTime(0.001, now);
+  cheerGain.gain.exponentialRampToValueAtTime(0.055, now + 0.12);
+  cheerGain.gain.exponentialRampToValueAtTime(0.001, now + 0.42);
+  cheer.connect(filter).connect(cheerGain).connect(masterGain);
+  cheer.start(now);
+}
+
 /** A quick, bright coin chime when a chest reaches a home castle. */
 export function playGoldBanked(): void {
   const context = usableContext();
