@@ -65,9 +65,15 @@
               </select>
               <small>Changes animation speed only; computer strength stays exactly the same.</small>
             </label>
-            <button id="start-game" class="primary-button launch-battle-button" type="button">
-              Sound the horn
-            </button>
+            <div class="setup-launch-actions">
+              <button id="start-game" class="primary-button launch-battle-button" type="button">
+                Sound the horn
+              </button>
+              <button id="start-demo" class="secondary-button launch-battle-button demo-battle-button" type="button">
+                Watch a 4-chief demo
+              </button>
+              <small class="demo-launch-note">Uses the current match options and computer difficulties. Human or unused factions become Normal computers for the demo. You can return to the War Council at any time.</small>
+            </div>
           </div>
           <nav class="longhouse-links" aria-label="Viking Raiderz information and support">
             <button id="buy-mead" class="longhouse-link mead-link" type="button">
@@ -326,6 +332,7 @@
           </div>
 
           <aside id="command-panel" class="command-panel" aria-label="Turn controls">
+            <p id="demo-match-notice" class="demo-match-notice" hidden><strong>Four-chief demonstration</strong><span>Watch the battle—or return to the War Council at any time.</span></p>
             <section id="active-chief" class="chief-card"></section>
 
             <section class="turn-order-panel" aria-labelledby="turn-order-title">

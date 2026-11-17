@@ -105,6 +105,8 @@ const soundEffectsToggle = requireElement<HTMLInputElement>("sound-effects-enabl
 const musicToggle = requireElement<HTMLInputElement>("music-enabled");
 const winterToggle = requireElement<HTMLInputElement>("winter-enabled");
 const startButton = requireElement<HTMLButtonElement>("start-game");
+const startDemoButton = requireElement<HTMLButtonElement>("start-demo");
+const demoMatchNotice = requireElement<HTMLElement>("demo-match-notice");
 const openTutorialButton = requireElement<HTMLButtonElement>("open-tutorial");
 const tutorialHub = requireElement<HTMLElement>("tutorial-hub");
 const tutorialLessonList = requireElement<HTMLElement>("tutorial-lesson-list");
@@ -367,6 +369,7 @@ let sagaDiscardAnimationSequence: number | undefined;
 let presentedBattleReportFor: PlayerId | undefined;
 let openingHornRunning = false;
 let openingHornSequence = 0;
+let demoMatchActive = false;
 /** Human matches pause here so the player can reject an unappealing fjord before play. */
 let mapPreviewActive = false;
 
@@ -4423,9 +4426,9 @@ function resetMatchPresentation(): void {
   viewBattleReportButton.hidden = true;
 }
 
-function createFreshMatch(): void {
+function createFreshMatch(setups: PlayerSetup[] = readSetups()): void {
   const randomSeed = crypto.getRandomValues(new Uint32Array(1))[0] ?? Date.now();
-  gameState = createGame(readSetups(), randomSeed, {
+  gameState = createGame(setups, randomSeed, {
     eventCardFrequency: eventCardFrequencySelect.value as GameState["eventCardFrequency"],
     randomStartingPlayer: randomStartingPlayerToggle.checked,
     randomPlayerOrder: randomPlayerOrderToggle.checked,
@@ -4500,21 +4503,43 @@ function commenceMatch(): void {
   updateAll();
 }
 
-function startGame(): void {
-  if (!validateSetups()) return;
+function launchMatch(setups: PlayerSetup[], previewBattlefield: boolean): void {
   stopMenuMusic();
   setSoundEffectsEnabled(soundEffectsToggle.checked);
   setMusicEnabled(musicToggle.checked);
-  createFreshMatch();
+  createFreshMatch(setups);
   setHistoryView("game", "push");
   heritageNote.hidden = true;
   setup.hidden = true;
   gameShell.hidden = false;
+  demoMatchNotice.hidden = !demoMatchActive;
+  newGameButton.textContent = demoMatchActive
+    ? "Stop demo · Return to War Council"
+    : "Return to War Council";
   ensureBoard();
-  mapPreviewActive = readSetups().some((player) => player.controller === "human");
+  mapPreviewActive = previewBattlefield;
   mapPreview.hidden = !mapPreviewActive;
   if (mapPreviewActive) updateAll();
   else commenceMatch();
+}
+
+function startGame(): void {
+  if (!validateSetups()) return;
+  const setups = readSetups();
+  demoMatchActive = false;
+  launchMatch(setups, setups.some((player) => player.controller === "human"));
+}
+
+function startDemo(): void {
+  const demoSetups = readSetups().map<PlayerSetup>((player) => ({
+    id: player.id,
+    controller: player.controller === "human" || player.controller === "off"
+      ? "normal"
+      : player.controller,
+  }));
+  demoMatchActive = true;
+  setupMessage.textContent = "Four computer chiefs are ready to demonstrate several questionable strategies.";
+  launchMatch(demoSetups, false);
 }
 
 function returnToSetup(): void {
@@ -4548,6 +4573,8 @@ function returnToSetup(): void {
   hornCeremony.classList.remove("is-fading");
   mapPreviewActive = false;
   mapPreview.hidden = true;
+  demoMatchActive = false;
+  demoMatchNotice.hidden = true;
   sagaTable.hidden = true;
   presentedWinterPhase = 0;
   eventReveal.hidden = true;
@@ -4571,6 +4598,7 @@ function returnToSetup(): void {
 
 slots.addEventListener("change", validateSetups);
 startButton.addEventListener("click", startGame);
+startDemoButton.addEventListener("click", startDemo);
 openTutorialButton.addEventListener("click", openTutorialHub);
 closeTutorialHubButton.addEventListener("click", () => {
   tutorialHub.hidden = true;
