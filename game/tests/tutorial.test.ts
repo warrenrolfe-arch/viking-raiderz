@@ -64,11 +64,15 @@ describe("interactive tutorial scenarios", () => {
     expect(siege.players.find((player) => player.id === "red")?.eliminated).toBe(true);
   });
 
-  it("demonstrates the committed purchase phase with real economy rules", () => {
+  it("demonstrates a full purchase phase and the space needed by every footprint", () => {
     const state = createTutorialGame("purchasing");
     expect(completeManoeuvres(state)).toBe(true);
     expect(buyUnit(state, "blue", "soldier")).toBe(true);
-    expect(state.players.find((player) => player.id === "blue")?.gold).toBe(8);
+    expect(buyUnit(state, "blue", "soldier")).toBe(true);
+    expect(buyUnit(state, "blue", "catapult")).toBe(true);
+    expect(buyUnit(state, "blue", "longboat")).toBe(true);
+    expect(state.players.find((player) => player.id === "blue")?.gold).toBe(0);
+    expect(state.battleStats.blue?.unitsPurchased).toEqual({ soldier: 2, catapult: 1, longboat: 1 });
     expect(endTurn(state)).toBe(true);
     expect(state.completedTurns).toBe(1);
   });

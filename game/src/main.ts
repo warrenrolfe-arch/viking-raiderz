@@ -3554,19 +3554,37 @@ function tutorialCopy(): { instruction: string; rule: string; hint: string; step
         instruction: "Press Viking Manoeuvres Complete to commit the movement and combat phase.",
         rule: "Purchasing remains locked until manoeuvres are committed. You cannot return to movement afterwards.",
         hint: "Use the large gold button in the command panel.",
-        steps: 3,
+        steps: 6,
       };
       if (stage === 1) return {
-        instruction: "Buy one Viking from the war chest.",
-        rule: "Purchased units cost gold and appear on a clear legal square directly beside your home castle.",
-        hint: "Press the Viking purchase row. The other purchases are locked for this lesson.",
-        steps: 3,
+        instruction: "Buy the first of two Vikings from the war chest.",
+        rule: "A unit can only be purchased when there is enough gold and a suitable clear space directly beside your home castle.",
+        hint: "Press Soldier in the war chest. New recruits are ordinary Vikings; watch this one occupy part of the courtyard.",
+        steps: 6,
+      };
+      if (stage === 2) return {
+        instruction: "Buy a second Viking.",
+        rule: "Every new unit needs its own legal space. A blocked courtyard can prevent a purchase even when you have enough gold.",
+        hint: "Press Soldier again. A different clear square beside the castle will be used.",
+        steps: 6,
+      };
+      if (stage === 3) return {
+        instruction: "Now buy a Catapult.",
+        rule: "A Catapult needs room for its two-square horizontal footprint beside the castle.",
+        hint: "Press the Catapult purchase row. The training yard has left a two-square space for it.",
+        steps: 6,
+      };
+      if (stage === 4) return {
+        instruction: "Buy a Longboat to complete the new force.",
+        rule: "A Longboat needs a clear three-square horizontal water berth directly beside the castle. No berth means no boat purchase.",
+        hint: "Press the Longboat purchase row. It will launch into the prepared water berth above the castle.",
+        steps: 6,
       };
       return {
         instruction: "Press Loot Spending Complete to end the purchase phase and finish the turn.",
         rule: "A normal match now resolves any scheduled Saga Card, then passes play to the next faction.",
         hint: "Use the large gold button once more.",
-        steps: 3,
+        steps: 6,
       };
   }
 }
@@ -3612,14 +3630,26 @@ function checkTutorialProgress(): void {
   } else if (session.lessonId === "castles") {
     completed = Boolean(gameState.players.find((player) => player.id === "red")?.eliminated);
   } else if (session.lessonId === "purchasing") {
-    const purchases = gameState.battleStats.blue?.unitsPurchased.soldier ?? 0;
+    const purchases = gameState.battleStats.blue?.unitsPurchased;
+    const vikings = purchases?.soldier ?? 0;
+    const catapults = purchases?.catapult ?? 0;
+    const longboats = purchases?.longboat ?? 0;
     if (session.stage === 0 && gameState.turnPhase === "purchase") {
       session.stage = 1;
       session.hintVisible = false;
-    } else if (session.stage === 1 && purchases > 0) {
+    } else if (session.stage === 1 && vikings >= 1) {
       session.stage = 2;
       session.hintVisible = false;
-    } else if (session.stage === 2 && gameState.completedTurns > 0) completed = true;
+    } else if (session.stage === 2 && vikings >= 2) {
+      session.stage = 3;
+      session.hintVisible = false;
+    } else if (session.stage === 3 && catapults >= 1) {
+      session.stage = 4;
+      session.hintVisible = false;
+    } else if (session.stage === 4 && longboats >= 1) {
+      session.stage = 5;
+      session.hintVisible = false;
+    } else if (session.stage === 5 && gameState.completedTurns > 0) completed = true;
   }
 
   if (completed) {
@@ -3819,7 +3849,7 @@ function updateAll(): void {
   boatPassengersPanel.hidden = gameState.turnPhase !== "movement" || selected?.type !== "longboat" || selectedBoatPassengers.length === 0;
   boatPassengersPanel.innerHTML = selectedBoatPassengers.map((passenger, index) => {
     const treasure = carriedTreasure(gameState!, passenger.id);
-    const rank = passenger.veteran ? "Veteran" : "Soldier";
+    const rank = passenger.veteran ? "Veteran" : "Viking";
     const active = passenger.id === selectedPassengerId;
     return `
       <button class="passenger-button${active ? " is-selected" : ""}" type="button" data-passenger-id="${passenger.id}" aria-pressed="${active}" ${canChoosePassenger ? "" : "disabled"}>
@@ -3850,7 +3880,7 @@ function updateAll(): void {
   const humanTurn = player.controller === "human" && !openingHornRunning && !aiRunning && !drunkMoveRunning && !movementRunning && !winterAnnouncementRunning && !sagaEffectRunning && !humanTurnAnnouncementRunning && !gameState.winnerId && !tutorialSession?.complete;
   const tutorialCanEndPhase = !tutorialSession || (
     tutorialSession.lessonId === "purchasing" &&
-    (tutorialSession.stage === 0 || tutorialSession.stage === 2)
+    (tutorialSession.stage === 0 || tutorialSession.stage === 5)
   );
   endTurnButton.disabled = !humanTurn || !tutorialCanEndPhase;
   endTurnButton.textContent = gameState.turnPhase === "movement"
@@ -3858,9 +3888,16 @@ function updateAll(): void {
     : "Loot Spending Complete";
   for (const button of purchaseButtons) {
     const type = button.dataset.unit as UnitType;
-    const tutorialCanBuy = !tutorialSession || (
-      tutorialSession.lessonId === "purchasing" && tutorialSession.stage === 1 && type === "soldier"
-    );
+    const tutorialPurchaseType: UnitType | undefined = tutorialSession?.lessonId === "purchasing"
+      ? tutorialSession.stage === 1 || tutorialSession.stage === 2
+        ? "soldier"
+        : tutorialSession.stage === 3
+          ? "catapult"
+          : tutorialSession.stage === 4
+            ? "longboat"
+            : undefined
+      : undefined;
+    const tutorialCanBuy = !tutorialSession || type === tutorialPurchaseType;
     button.disabled = !humanTurn || !tutorialCanBuy || gameState.turnPhase !== "purchase" || !canBuyUnit(gameState, player.id, type);
   }
 

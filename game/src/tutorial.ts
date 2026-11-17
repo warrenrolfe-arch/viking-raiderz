@@ -194,9 +194,12 @@ export function createTutorialGame(lessonId: TutorialLessonId): GameState {
 
     case "purchasing":
       state.players.find((player) => player.id === "blue")!.castle = { x: 6, y: 12 };
-      state.players.find((player) => player.id === "blue")!.gold = 10;
+      state.players.find((player) => player.id === "blue")!.gold = 16;
+      // Leave a clear land courtyard plus one three-square water berth. The
+      // lesson deliberately fills these spaces as each purchase is made.
+      for (let x = 4; x <= 8; x += 1) setTerrain(state, { x, y: 11 }, "water");
       addUnit(state, "tutorial-quartermaster", "blue", "soldier", { x: 9, y: 12 }, { moved: true });
-      state.log = ["Commit Viking Manoeuvres before the war chest can be opened."];
+      state.log = ["Commit Viking Manoeuvres, then assemble two Vikings, a Catapult and a Longboat."];
       break;
   }
 
