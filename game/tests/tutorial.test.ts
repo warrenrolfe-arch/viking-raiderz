@@ -47,6 +47,14 @@ describe("interactive tutorial scenarios", () => {
     expect(moveUnit(drinking, "tutorial-drinker", { x: 12, y: 12 })).toBe(true);
     expect(drinking.units.find((unit) => unit.id === "tutorial-drinker")?.drunk).toBe(true);
     expect(drinking.drinkingHorns).toHaveLength(0);
+    drinking.activePlayerIndex = drinking.players.findIndex((player) => player.id === "red");
+    expect(moveUnit(drinking, "tutorial-soberer", { x: 12, y: 12 })).toBe(true);
+    expect(drinking.units.find((unit) => unit.id === "tutorial-drinker")).toMatchObject({
+      playerId: "red",
+      drunk: false,
+      position: { x: 12, y: 12 },
+    });
+    expect(drinking.units.find((unit) => unit.id === "tutorial-soberer")?.position).toEqual({ x: 11, y: 12 });
   });
 
   it("supports boarding, a nine-square Longboat move and chosen disembarkation", () => {

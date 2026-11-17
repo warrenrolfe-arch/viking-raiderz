@@ -261,7 +261,7 @@ function tutorialFocusUnitId(): string | undefined {
   if (!tutorialSession || tutorialSession.complete) return undefined;
   switch (tutorialSession.lessonId) {
     case "movement": return "tutorial-mover";
-    case "drunkenness": return "tutorial-drinker";
+    case "drunkenness": return tutorialSession.stage === 0 ? "tutorial-drinker" : "tutorial-soberer";
     case "longboats": return tutorialSession.stage === 0 ? "tutorial-sailor" : "tutorial-boat";
     case "catapults": return "tutorial-catapult";
     case "combat": return "tutorial-attacker";
@@ -3525,12 +3525,19 @@ function tutorialCopy(): { instruction: string; rule: string; hint: string; step
         steps: 5,
       };
     case "drunkenness":
-      return {
-        instruction: "Move the glowing Viking east onto the Drinking Horn.",
-        rule: "A horn stops a Viking immediately. They become drunk, drop carried treasure, cannot board, and stagger automatically next turn.",
-        hint: "Select the Viking, then click the highlighted horn square.",
-        steps: 1,
-      };
+      return stage === 0
+        ? {
+            instruction: "Move the glowing Blue Viking east onto the Drinking Horn.",
+            rule: "A horn stops a Viking immediately. They become drunk, drop carried treasure, cannot board, and stagger automatically next turn.",
+            hint: "Click the Blue Viking, then click the highlighted horn square.",
+            steps: 2,
+          }
+        : {
+            instruction: "Now command the glowing Red Viking and attack the drunk Blue Viking.",
+            rule: "Attacking an enemy drunk Viking does not kill them. They sober up, change to the attacker's faction, and remain on their square.",
+            hint: "Select the Red Viking on the left, then click the highlighted drunk Viking. Red will recruit them.",
+            steps: 2,
+          };
     case "longboats":
       if (stage === 0) return {
         instruction: "Board the Longboat: select the Viking and move onto the boat.",
@@ -3649,7 +3656,20 @@ function checkTutorialProgress(): void {
       selectedUnitId = undefined;
     } else if (session.stage === 4 && mover?.position.x === 12 && mover.position.y === 19 && mover.drunk) completed = true;
   } else if (session.lessonId === "drunkenness") {
-    completed = Boolean(unit("tutorial-drinker")?.drunk);
+    const drinker = unit("tutorial-drinker");
+    const soberer = unit("tutorial-soberer");
+    if (session.stage === 0 && drinker?.drunk) {
+      session.stage = 1;
+      session.hintVisible = false;
+      gameState.activePlayerIndex = gameState.players.findIndex((player) => player.id === "red");
+      selectedUnitId = undefined;
+    } else if (
+      session.stage === 1 &&
+      drinker?.playerId === "red" &&
+      !drinker.drunk &&
+      soberer?.position.x === 11 &&
+      soberer.position.y === 12
+    ) completed = true;
   } else if (session.lessonId === "longboats") {
     const sailor = unit("tutorial-sailor");
     const boat = unit("tutorial-boat");
@@ -3792,7 +3812,9 @@ function requestTutorialHub(): void {
 
 function updateAll(): void {
   if (!gameState) return;
-  checkTutorialProgress();
+  // Core rules resolve before their presentation. Keep success concealed
+  // until movement, combat, projectile, and siege animation has completed.
+  if (!movementRunning && !castleAssaultRunning && !sagaEffectRunning) checkTutorialProgress();
   const player = activePlayer(gameState);
   renderTurnOrder(gameState);
   if (mapPreviewActive) {

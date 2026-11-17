@@ -32,9 +32,9 @@ export const TUTORIAL_LESSONS: readonly TutorialLesson[] = [
     id: "drunkenness",
     number: 2,
     symbol: "🍺",
-    title: "Mead and Misdirection",
-    summary: "Meet a Drinking Horn and learn why thirsty Vikings become unreliable.",
-    estimatedTime: "about 45 seconds",
+    title: "Mead and Persuasion",
+    summary: "Become drunk, then sober that Viking up by recruiting them from the opposing side.",
+    estimatedTime: "about 1 minute",
   },
   {
     id: "longboats",
@@ -157,8 +157,9 @@ export function createTutorialGame(lessonId: TutorialLessonId): GameState {
 
     case "drunkenness":
       addUnit(state, "tutorial-drinker", "blue", "soldier", { x: 6, y: 12 });
+      addUnit(state, "tutorial-soberer", "red", "soldier", { x: 5, y: 12 });
       state.drinkingHorns = [{ id: "tutorial-horn", position: { x: 12, y: 12 } }];
-      state.log = ["A completely unattended horn of mead waits to the east. Suspicious."];
+      state.log = ["A completely unattended horn of mead waits to the east. Another faction is watching closely."];
       break;
 
     case "longboats":
