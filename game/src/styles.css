@@ -178,15 +178,44 @@ main {
   line-height: 1.6;
 }
 
-.setup-copy .browser-notice {
-  max-width: 68ch;
+.browser-advice-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: stretch;
   margin-top: 0.85rem;
+}
+
+.setup-copy .browser-notice {
+  flex: 1 1 auto;
+  max-width: 68ch;
+  margin: 0;
   padding: 0.65rem 0.85rem;
   border-left: 4px solid #2f8ea4;
   border-radius: 0 9px 9px 0;
   color: #294a55;
   background: rgba(224, 246, 250, 0.72);
   font-size: 0.9rem;
+}
+
+.acknowledgement-link {
+  flex: 0 0 10.5rem;
+  min-height: auto;
+  line-height: 1.15;
+}
+
+#event-continue {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.08rem;
+}
+
+#event-continue small {
+  font-size: 0.65rem;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.025em;
+  opacity: 0.78;
 }
 
 .player-slots {
@@ -222,7 +251,7 @@ main {
 
 .longhouse-links {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 0.75rem;
   margin: 0;
   padding: 1rem 2rem;
@@ -2136,6 +2165,15 @@ main {
 }
 
 @media (max-width: 760px) {
+  .browser-advice-row {
+    flex-direction: column;
+  }
+
+  .acknowledgement-link {
+    flex-basis: auto;
+    width: 100%;
+  }
+
   .masthead {
     align-items: start;
   }

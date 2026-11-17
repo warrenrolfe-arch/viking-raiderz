@@ -4052,16 +4052,19 @@ function syncEventReveal(): boolean {
   eventTitle.textContent = presentation.title;
   eventDescription.textContent = computerDraw
     ? `${player?.name ?? "A faction"} drew this card. The computer chief will continue after four seconds.`
-    : `${player?.name ?? "A faction"} drew this card at the end of their turn. The Saga will continue after six seconds unless you choose to see its effect now.`;
+    : `${player?.name ?? "A faction"} drew this card at the end of their turn. The Saga will continue after eight seconds unless you choose to see its effect now.`;
   eventOutcome.textContent = event.outcome;
   eventDeckCount.textContent = event.reshuffled && sagaDrawReadySequence !== event.sequence
     ? "The old tales are being shuffled into a fresh Saga pile."
     : `${sagaDrawState.textContent}. The piles on the Saga table show how fate is flowing.`;
-  eventContinueButton.textContent = computerDraw
-    ? "Computer continues shortly"
-    : event.effects.some((effect) => effect.kind !== "benign")
+  if (computerDraw) {
+    eventContinueButton.textContent = "Computer continues shortly";
+  } else {
+    const action = event.effects.some((effect) => effect.kind !== "benign")
       ? "Show effect on board"
       : "Continue saga";
+    eventContinueButton.innerHTML = `<span>${action}</span><small>click to dismiss</small>`;
+  }
   const drawReady = sagaDrawReadySequence === event.sequence;
   eventCard.classList.toggle("is-awaiting-draw", !drawReady);
   eventContinueButton.disabled = !drawReady || sagaEffectRunning;
@@ -4069,7 +4072,7 @@ function syncEventReveal(): boolean {
     void animateSagaDraw(event);
   }
   // A card must never hold up a hot-seat match indefinitely. Computer chiefs
-  // have the shorter four-second pause, while human players have six seconds
+  // have the shorter four-second pause, while human players have eight seconds
   // to read the card or press the button before the same resolution begins.
   if (drawReady && autoSagaEventSequence !== event.sequence) {
     if (autoSagaTimer !== undefined) window.clearTimeout(autoSagaTimer);
@@ -4079,7 +4082,7 @@ function syncEventReveal(): boolean {
       if (gameState?.lastEvent?.sequence === event.sequence && dismissedEventSequence !== event.sequence) {
         void runSagaEffect(event);
       }
-    }, computerDraw ? 4_000 : 6_000);
+    }, computerDraw ? 4_000 : 8_000);
   }
   return true;
 }
