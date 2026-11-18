@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import "./styles.css";
+import "flag-icons/css/flag-icons.min.css";
 import { resolveBoardTheme, type BoardTheme } from "./boardThemes";
 import {
   UNIT_RULES,
@@ -400,7 +401,7 @@ function populateHallCountries(): void {
   for (const country of HALL_COUNTRIES) {
     const option = document.createElement("option");
     option.value = country.alpha3;
-    option.textContent = `${country.flag} ${country.alpha3} — ${country.name}`;
+    option.textContent = `${country.alpha3} — ${country.name}`;
     fragment.append(option);
   }
   hallCountry.append(fragment);
@@ -421,15 +422,21 @@ function renderHallEntries(entries: HallEntry[]): void {
     const row = hallList.insertRow();
     if (entry.rank <= 3) row.classList.add(`hall-rank-${entry.rank}`);
     const country = HALL_COUNTRY_BY_CODE.get(entry.countryCode);
-    const values = [
-      `#${entry.rank}`,
-      entry.initials,
-      country ? `${country.flag} ${country.alpha3}` : entry.countryCode,
-      entry.chief,
-      String(entry.turns),
-      formatHallTimestamp(entry.createdAt),
-    ];
-    for (const value of values) {
+    for (const value of [`#${entry.rank}`, entry.initials]) {
+      const cell = row.insertCell();
+      cell.textContent = value;
+    }
+    const nationCell = row.insertCell();
+    nationCell.className = "hall-nation";
+    if (country) {
+      const flag = document.createElement("span");
+      flag.className = `fi fi-${country.alpha2.toLowerCase()}`;
+      flag.role = "img";
+      flag.ariaLabel = country.name;
+      flag.title = country.name;
+      nationCell.append(flag, document.createTextNode(country.alpha3));
+    } else nationCell.textContent = entry.countryCode;
+    for (const value of [entry.chief, String(entry.turns), formatHallTimestamp(entry.createdAt)]) {
       const cell = row.insertCell();
       cell.textContent = value;
     }

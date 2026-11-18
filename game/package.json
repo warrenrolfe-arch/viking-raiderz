@@ -10,6 +10,7 @@
     "benchmark": "vitest run benchmark/runner.test.ts --reporter=verbose"
   },
   "dependencies": {
+    "flag-icons": "^7.6.0",
     "i18n-iso-countries": "^7.14.0",
     "phaser": "latest"
   },
