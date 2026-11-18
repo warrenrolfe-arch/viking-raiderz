@@ -197,10 +197,22 @@ main {
   font-size: 0.9rem;
 }
 
-.acknowledgement-link {
-  flex: 0 0 10.5rem;
+.browser-feature-actions {
+  display: grid;
+  flex: 0 0 21rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.acknowledgement-link,
+.hall-link {
   min-height: auto;
   line-height: 1.15;
+}
+
+.hall-link {
+  border-color: rgba(132, 83, 21, 0.48);
+  background: linear-gradient(145deg, #fff5cb, #e9c46f);
 }
 
 #event-continue {
@@ -2099,6 +2111,189 @@ main {
   border-left-color: #b34d42;
 }
 
+.hall-qualification {
+  margin: 1.15rem 0 0;
+  padding: 1rem;
+  border: 2px solid #b87921;
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at 90% 5%, rgba(255, 226, 113, 0.34), transparent 35%),
+    linear-gradient(145deg, rgba(255, 250, 219, 0.98), rgba(231, 214, 162, 0.9));
+  box-shadow: inset 0 0 0 4px rgba(255, 255, 255, 0.38);
+}
+
+.hall-qualification-heading,
+.hall-intro {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.hall-qualification-heading h3,
+.hall-qualification-heading p,
+.hall-intro h3,
+.hall-intro p {
+  margin: 0;
+}
+
+.hall-qualification-heading h3,
+.hall-intro h3 {
+  font-family: "Almendra", Georgia, serif;
+  font-size: 1.65rem;
+}
+
+.hall-qualification-heading p:not(.eyebrow),
+.hall-intro p:not(.eyebrow) {
+  margin-top: 0.35rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.hall-laurel,
+.hall-shield {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 4rem;
+  height: 4rem;
+  border: 2px solid #6e4420;
+  border-radius: 50%;
+  color: #fff4c9;
+  background: #294a55;
+  box-shadow: inset 0 0 0 5px rgba(219, 165, 58, 0.42);
+  font-size: 2rem;
+}
+
+.hall-entry-form {
+  display: grid;
+  grid-template-columns: minmax(9rem, 0.65fr) minmax(15rem, 1.35fr);
+  gap: 0.8rem;
+  margin-top: 0.9rem;
+}
+
+.hall-entry-form label {
+  display: grid;
+  gap: 0.35rem;
+  color: #19394a;
+  font-weight: 800;
+}
+
+.hall-entry-form input,
+.hall-entry-form select {
+  width: 100%;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid rgba(79, 56, 34, 0.3);
+  border-radius: 9px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.82);
+  font: inherit;
+}
+
+.hall-entry-form input {
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.hall-achievement-summary,
+.hall-entry-status,
+.hall-entry-actions {
+  grid-column: 1 / -1;
+}
+
+.hall-achievement-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.65rem 0.8rem;
+  border-left: 4px solid #b34d42;
+  color: #294a55;
+  background: rgba(255, 255, 255, 0.48);
+}
+
+.hall-turnstile {
+  grid-column: 1 / -1;
+  min-height: 65px;
+}
+
+.hall-entry-status,
+.hall-list-status {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.hall-entry-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.65rem;
+}
+
+.hall-intro {
+  padding: 1rem 1.1rem;
+  border-left: 5px solid #b87921;
+  border-radius: 7px 13px 13px 7px;
+  background: rgba(255, 250, 226, 0.72);
+}
+
+.hall-list-status {
+  margin: 0.8rem 0;
+  font-weight: 700;
+}
+
+.hall-table-wrap {
+  overflow-x: auto;
+  border: 1px solid rgba(79, 56, 34, 0.2);
+  border-radius: 12px;
+}
+
+.hall-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: rgba(255, 255, 255, 0.5);
+  font-size: 0.9rem;
+}
+
+.hall-table th,
+.hall-table td {
+  padding: 0.72rem 0.65rem;
+  border-bottom: 1px solid rgba(79, 56, 34, 0.12);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.hall-table thead th {
+  color: #fff7dd;
+  background: #294a55;
+  font-size: 0.74rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.hall-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.hall-table tbody td:nth-child(1),
+.hall-table tbody td:nth-child(2),
+.hall-table tbody td:nth-child(5) {
+  color: #19394a;
+  font-weight: 900;
+}
+
+.hall-rank-1 { background: rgba(255, 221, 96, 0.3); }
+.hall-rank-2 { background: rgba(211, 219, 223, 0.42); }
+.hall-rank-3 { background: rgba(205, 138, 78, 0.2); }
+
+.hall-empty {
+  padding: 1.3rem !important;
+  color: var(--muted);
+  text-align: center !important;
+  white-space: normal !important;
+}
+
 .feedback-form {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2215,9 +2410,19 @@ main {
     flex-direction: column;
   }
 
-  .acknowledgement-link {
+  .browser-feature-actions {
     flex-basis: auto;
     width: 100%;
+  }
+
+  .hall-entry-form {
+    grid-template-columns: 1fr;
+  }
+
+  .hall-entry-actions,
+  .hall-achievement-summary {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .masthead {

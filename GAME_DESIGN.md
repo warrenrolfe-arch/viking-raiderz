@@ -360,3 +360,11 @@ These should be answered through reference study or a small prototype rather tha
 12. What board dimensions keep travel meaningful without pushing matches beyond the 20–30 minute target?
 13. Should players eventually be able to customise individual AI traits in addition to choosing one of the five difficulty levels?
 
+# Hall of Legends
+
+The public **Hall of Legends** records up to forty qualifying human victories. A qualifying match has exactly one human player against three Expert computer players, Saga Cards every two turns, and Winter Is Coming enabled. The human must win. Results are ranked by the fewest completed faction turns, then by the earliest submission time.
+
+After a qualifying Battle Report, the winner may enter exactly three A–Z initials and choose a country or territory. Public entries show initials, flag and ISO three-letter country code, winning chief, completed faction turns, and a compact UTC submission time. Multiple entries are allowed, including repeated initials, nationality, and chief combinations.
+
+The Hall is a deliberately casual challenge rather than an anti-cheat competition. The browser supplies a structural match proof; the Cloudflare Pages Function validates its shape, verifies Turnstile, applies a small daily submission limit using a temporary one-way source hash, and stores the ranked result in D1. It does not claim replay-grade proof. The client and Privacy Notice should remain honest about that boundary.
+

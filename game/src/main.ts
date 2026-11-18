@@ -70,6 +70,14 @@ import {
   createTutorialGame,
   type TutorialLessonId,
 } from "./tutorial";
+import {
+  HALL_CHIEFS,
+  HALL_COUNTRIES,
+  formatHallTimestamp,
+  hallQualificationFor,
+  type HallEntry,
+  type HallQualificationProof,
+} from "./hallOfLegends";
 import type { Controller, EventCardId, EventDraw, EventEffect, GameState, PlayerId, PlayerSetup, Position, Terrain, TreasureChest, Unit, UnitType } from "./types";
 
 const PLAYER_OPTIONS: Array<{
@@ -172,6 +180,20 @@ const battleReportSubtitle = requireElement<HTMLElement>("battle-report-subtitle
 const battleReportSummary = requireElement<HTMLElement>("battle-report-summary");
 const battleReportFactions = requireElement<HTMLTableSectionElement>("battle-report-factions");
 const battleReportAwardList = requireElement<HTMLElement>("battle-report-award-list");
+const hallQualification = requireElement<HTMLElement>("hall-qualification");
+const hallQualificationCopy = requireElement<HTMLElement>("hall-qualification-copy");
+const hallEntryForm = requireElement<HTMLFormElement>("hall-entry-form");
+const hallInitials = requireElement<HTMLInputElement>("hall-initials");
+const hallCountry = requireElement<HTMLSelectElement>("hall-country");
+const hallAchievementChief = requireElement<HTMLElement>("hall-achievement-chief");
+const hallAchievementTurns = requireElement<HTMLElement>("hall-achievement-turns");
+const hallTurnstile = requireElement<HTMLElement>("hall-turnstile");
+const hallEntryStatus = requireElement<HTMLElement>("hall-entry-status");
+const hallSkipButton = requireElement<HTMLButtonElement>("hall-skip");
+const hallSubmitButton = requireElement<HTMLButtonElement>("hall-submit");
+const hallViewAfterSubmit = requireElement<HTMLButtonElement>("hall-view-after-submit");
+const hallListStatus = requireElement<HTMLElement>("hall-list-status");
+const hallList = requireElement<HTMLTableSectionElement>("hall-list");
 const viewBattleReportButton = requireElement<HTMLButtonElement>("view-battle-report");
 const reviewBattlefieldButton = requireElement<HTMLButtonElement>("review-battlefield");
 const reportNewGameButton = requireElement<HTMLButtonElement>("report-new-game");
@@ -194,8 +216,10 @@ const purchaseButtons = Array.from(document.querySelectorAll<HTMLButtonElement>(
 const longhouseOpenButtons = Array.from(document.querySelectorAll<HTMLButtonElement>("[data-longhouse-page]"));
 const longhousePages = Array.from(document.querySelectorAll<HTMLElement>("[data-longhouse-content]"));
 
-type LonghousePage = "instructions" | "acknowledgements" | "feedback" | "privacy";
+type LonghousePage = "instructions" | "acknowledgements" | "hall" | "feedback" | "privacy";
 const WEB3FORMS_ACCESS_KEY = "f8b0ab63-dde7-4ba9-a38c-b6d7ac963948";
+const HALL_TURNSTILE_SITE_KEY = "0x4AAAAAAF51jeePlMMC7zkt";
+const HALL_TURNSTILE_TEST_KEY = "1x00000000000000000000AA";
 const HISTORY_VIEW_KEY = "vikingRaiderzView";
 const TUTORIAL_COMPLETION_KEY = "vikingRaiderzTutorialLessons";
 
@@ -204,6 +228,25 @@ interface TutorialSession {
   stage: number;
   complete: boolean;
   hintVisible: boolean;
+}
+
+interface TurnstileApi {
+  render(container: HTMLElement, options: {
+    sitekey: string;
+    action: string;
+    theme: "light";
+    callback: (token: string) => void;
+    "expired-callback": () => void;
+    "error-callback": () => void;
+  }): string;
+  reset(widgetId?: string): void;
+  remove(widgetId?: string): void;
+}
+
+declare global {
+  interface Window {
+    turnstile?: TurnstileApi;
+  }
 }
 
 let tutorialSession: TutorialSession | undefined;
@@ -308,6 +351,12 @@ const LONGHOUSE_PAGE_COPY: Record<LonghousePage, { title: string; subtitle: stri
     eyebrow: "A toast from the longhouse",
     seal: "✦",
   },
+  hall: {
+    title: "Hall of Legends",
+    subtitle: "Forty remarkable raids, ranked by speed and preserved by an unusually sober skald.",
+    eyebrow: "The skald's honour roll",
+    seal: "♜",
+  },
   feedback: {
     title: "Feedback Form",
     subtitle: "Reports of bugs, battles and brilliant Saga Cards are welcome.",
@@ -335,6 +384,7 @@ function openLonghousePage(page: LonghousePage): void {
   longhouseModal.hidden = false;
   longhouseModal.scrollTop = 0;
   longhouseTitle.focus();
+  if (page === "hall") void loadHallOfLegends();
 }
 
 function closeLonghouse(): void {
@@ -343,7 +393,143 @@ function closeLonghouse(): void {
   longhousePreviousFocus = undefined;
 }
 
+const HALL_COUNTRY_BY_CODE = new Map(HALL_COUNTRIES.map((country) => [country.alpha3, country]));
+
+function populateHallCountries(): void {
+  const fragment = document.createDocumentFragment();
+  for (const country of HALL_COUNTRIES) {
+    const option = document.createElement("option");
+    option.value = country.alpha3;
+    option.textContent = `${country.flag} ${country.alpha3} — ${country.name}`;
+    fragment.append(option);
+  }
+  hallCountry.append(fragment);
+}
+
+function renderHallEntries(entries: HallEntry[]): void {
+  hallList.replaceChildren();
+  if (entries.length === 0) {
+    const row = hallList.insertRow();
+    const cell = row.insertCell();
+    cell.colSpan = 6;
+    cell.className = "hall-empty";
+    cell.textContent = "No legends have been recorded yet. The first empty chair is looking very important.";
+    return;
+  }
+
+  for (const entry of entries) {
+    const row = hallList.insertRow();
+    if (entry.rank <= 3) row.classList.add(`hall-rank-${entry.rank}`);
+    const country = HALL_COUNTRY_BY_CODE.get(entry.countryCode);
+    const values = [
+      `#${entry.rank}`,
+      entry.initials,
+      country ? `${country.flag} ${country.alpha3}` : entry.countryCode,
+      entry.chief,
+      String(entry.turns),
+      formatHallTimestamp(entry.createdAt),
+    ];
+    for (const value of values) {
+      const cell = row.insertCell();
+      cell.textContent = value;
+    }
+  }
+}
+
+async function loadHallOfLegends(): Promise<void> {
+  hallListStatus.textContent = "The skald is unrolling the honour scroll…";
+  try {
+    const response = await fetch("/api/hall-of-legends", { headers: { Accept: "application/json" } });
+    const result = await response.json().catch(() => undefined) as { entries?: HallEntry[]; error?: string } | undefined;
+    if (!response.ok) throw new Error(result?.error ?? "The Hall doors are stuck.");
+    const entries = result?.entries ?? [];
+    renderHallEntries(entries);
+    hallListStatus.textContent = entries.length === 0
+      ? "The honour scroll is ready for its first name."
+      : `${entries.length} legend${entries.length === 1 ? "" : "s"} currently hold a place in the Hall.`;
+  } catch (error) {
+    renderHallEntries([]);
+    hallListStatus.textContent = error instanceof Error
+      ? error.message
+      : "The Hall doors are stuck. Please try again shortly.";
+  }
+}
+
+function loadHallTurnstile(): Promise<void> {
+  if (window.turnstile) return Promise.resolve();
+  if (hallTurnstileScript) return hallTurnstileScript;
+  hallTurnstileScript = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+    script.async = true;
+    script.defer = true;
+    script.addEventListener("load", () => resolve());
+    script.addEventListener("error", () => reject(new Error("The anti-bot rune could not be loaded.")));
+    document.head.append(script);
+  });
+  return hallTurnstileScript;
+}
+
+async function renderHallTurnstile(): Promise<void> {
+  try {
+    await loadHallTurnstile();
+    if (!window.turnstile || hallQualification.hidden) return;
+    if (hallTurnstileWidgetId) window.turnstile.remove(hallTurnstileWidgetId);
+    hallTurnstile.replaceChildren();
+    hallTurnstileToken = "";
+    const local = location.hostname === "localhost" || location.hostname === "127.0.0.1";
+    hallTurnstileWidgetId = window.turnstile.render(hallTurnstile, {
+      sitekey: local ? HALL_TURNSTILE_TEST_KEY : HALL_TURNSTILE_SITE_KEY,
+      action: "hall-submit",
+      theme: "light",
+      callback: (token) => {
+        hallTurnstileToken = token;
+        hallEntryStatus.textContent = "Rune verified. Your legend is ready to be submitted.";
+      },
+      "expired-callback": () => {
+        hallTurnstileToken = "";
+        hallEntryStatus.textContent = "The anti-bot rune expired. Please complete it once more.";
+      },
+      "error-callback": () => {
+        hallTurnstileToken = "";
+        hallEntryStatus.textContent = "The anti-bot rune could not be verified. Please try again.";
+      },
+    });
+  } catch (error) {
+    hallEntryStatus.textContent = error instanceof Error ? error.message : "The anti-bot rune could not be loaded.";
+  }
+}
+
+function syncHallQualification(state: GameState, proof: HallQualificationProof | undefined): void {
+  const hiddenForMatch = hallPromptDismissedForSeed === state.seed || hallSubmittedForSeed === state.seed;
+  hallQualification.hidden = !proof || hiddenForMatch;
+  if (!proof || hiddenForMatch) return;
+
+  if (hallQualificationSeed !== state.seed) {
+    hallQualificationSeed = state.seed;
+    hallSubmissionId = crypto.randomUUID();
+    hallEntryForm.reset();
+    hallCountry.value = "";
+    hallEntryStatus.textContent = "Enter your initials and nationality, complete the anti-bot check, then claim your place—or skip without submitting anything.";
+    hallSubmitButton.disabled = false;
+    hallSubmitButton.hidden = false;
+    hallSkipButton.hidden = false;
+    hallViewAfterSubmit.hidden = true;
+    void renderHallTurnstile();
+  }
+  hallQualificationCopy.textContent = `${HALL_CHIEFS[proof.winnerId]} defeated three Expert chiefs under the full challenge rules.`;
+  hallAchievementChief.textContent = HALL_CHIEFS[proof.winnerId];
+  hallAchievementTurns.textContent = `${proof.completedTurns} completed faction turns`;
+}
+
 let gameState: GameState | undefined;
+let hallTurnstileWidgetId: string | undefined;
+let hallTurnstileToken = "";
+let hallTurnstileScript: Promise<void> | undefined;
+let hallQualificationSeed: number | undefined;
+let hallPromptDismissedForSeed: number | undefined;
+let hallSubmittedForSeed: number | undefined;
+let hallSubmissionId = "";
 const activeBoardTheme: BoardTheme = resolveBoardTheme("new-graphics");
 document.documentElement.dataset.boardTheme = activeBoardTheme.id;
 let phaserGame: Phaser.Game | undefined;
@@ -3320,6 +3506,7 @@ function renderBattleReport(state: GameState): void {
 
   battleReportTitle.textContent = `${winner.title} wins the fjord!`;
   battleReportSubtitle.textContent = `Concluded in round ${state.round} after ${state.completedTurns} completed faction turns. The skald insists every word below is “mostly accurate”.`;
+  syncHallQualification(state, hallQualificationFor(state));
   battleReportSummary.innerHTML = [
     ["Rounds", state.round, "A brisk little disagreement"],
     ["Units lost", casualties, casualties === 0 ? "An exceptionally polite invasion" : "Valhalla has been notified"],
@@ -4778,6 +4965,67 @@ window.addEventListener("resize", () => {
   if (!eventReveal.hidden) positionSagaRevealOverBattlefield();
 });
 
+hallInitials.addEventListener("input", () => {
+  hallInitials.value = hallInitials.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 3);
+});
+hallSkipButton.addEventListener("click", () => {
+  if (!gameState) return;
+  hallPromptDismissedForSeed = gameState.seed;
+  hallQualification.hidden = true;
+});
+hallViewAfterSubmit.addEventListener("click", () => openLonghousePage("hall"));
+hallEntryForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!gameState || !hallEntryForm.reportValidity()) return;
+  const proof = hallQualificationFor(gameState);
+  if (!proof) {
+    hallEntryStatus.textContent = "This finished battle no longer matches the Hall challenge.";
+    return;
+  }
+  if (!hallTurnstileToken) {
+    hallEntryStatus.textContent = "Please complete the anti-bot rune before entering the Hall.";
+    return;
+  }
+
+  hallSubmitButton.disabled = true;
+  hallEntryStatus.textContent = "The skald is checking the battle record…";
+  try {
+    const response = await fetch("/api/hall-of-legends", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({
+        initials: hallInitials.value,
+        countryCode: hallCountry.value,
+        chiefId: proof.winnerId,
+        submissionId: hallSubmissionId,
+        turnstileToken: hallTurnstileToken,
+        proof,
+      }),
+    });
+    const result = await response.json().catch(() => undefined) as {
+      placed?: boolean;
+      entry?: HallEntry;
+      message?: string;
+      error?: string;
+    } | undefined;
+    if (!response.ok) throw new Error(result?.error ?? "The Hall record keeper refused the tablet.");
+    hallSubmittedForSeed = gameState.seed;
+    hallSkipButton.hidden = true;
+    hallSubmitButton.hidden = true;
+    hallViewAfterSubmit.hidden = false;
+    hallEntryStatus.textContent = result?.message ?? (result?.placed
+      ? `Your legend enters the Hall at rank ${result.entry?.rank ?? "?"}.`
+      : "A worthy victory, though the current forty remain ahead—for now.");
+  } catch (error) {
+    hallEntryStatus.textContent = error instanceof Error
+      ? error.message
+      : "The Hall record keeper dropped the tablet. Please try again.";
+    hallSubmitButton.disabled = false;
+    hallTurnstileToken = "";
+    window.turnstile?.reset(hallTurnstileWidgetId);
+  }
+});
+
 feedbackForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   if (!feedbackForm.reportValidity()) return;
@@ -4842,6 +5090,7 @@ window.addEventListener("popstate", (event) => {
   if (historyView !== "setup") setHistoryView("setup", "replace");
 });
 
+populateHallCountries();
 buildSetup();
 validateSetups();
 

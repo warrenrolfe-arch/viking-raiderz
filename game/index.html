@@ -42,10 +42,16 @@
             </p>
             <div class="browser-advice-row">
               <p class="browser-notice"><strong>Best played in a PC or laptop browser window at 1440 × 900 or larger.</strong> Smaller screens can still raid, but may need a little more scrolling.</p>
-              <button class="longhouse-link acknowledgement-link" type="button" data-longhouse-page="acknowledgements">
-                <span aria-hidden="true">✦</span>
-                Acknowledgements
-              </button>
+              <div class="browser-feature-actions">
+                <button class="longhouse-link acknowledgement-link" type="button" data-longhouse-page="acknowledgements">
+                  <span aria-hidden="true">✦</span>
+                  Acknowledgements
+                </button>
+                <button class="longhouse-link hall-link" type="button" data-longhouse-page="hall">
+                  <span aria-hidden="true">♜</span>
+                  Hall of Legends
+                </button>
+              </div>
             </div>
           </div>
           <div id="player-slots" class="player-slots"></div>
@@ -398,6 +404,39 @@
                 <p id="battle-report-subtitle"></p>
               </div>
             </header>
+            <section id="hall-qualification" class="hall-qualification" aria-labelledby="hall-qualification-title" hidden>
+              <div class="hall-qualification-heading">
+                <span class="hall-laurel" aria-hidden="true">♜</span>
+                <div>
+                  <p class="eyebrow">Challenge conquered</p>
+                  <h3 id="hall-qualification-title">A place in the Hall of Legends!</h3>
+                  <p id="hall-qualification-copy"></p>
+                </div>
+              </div>
+              <form id="hall-entry-form" class="hall-entry-form">
+                <label>
+                  Three initials
+                  <input id="hall-initials" name="initials" type="text" inputmode="text" minlength="3" maxlength="3" pattern="[A-Za-z]{3}" autocomplete="off" placeholder="AXE" required />
+                </label>
+                <label>
+                  Nationality
+                  <select id="hall-country" name="country" required>
+                    <option value="">Choose country or territory</option>
+                  </select>
+                </label>
+                <div class="hall-achievement-summary">
+                  <span id="hall-achievement-chief">Winning chief</span>
+                  <strong id="hall-achievement-turns">0 faction turns</strong>
+                </div>
+                <div id="hall-turnstile" class="hall-turnstile" aria-label="Anti-bot verification"></div>
+                <p id="hall-entry-status" class="hall-entry-status" role="status">Enter your initials and nationality, complete the anti-bot check, then claim your place—or skip without submitting anything.</p>
+                <div class="hall-entry-actions">
+                  <button id="hall-skip" class="secondary-button" type="button">Skip this honour</button>
+                  <button id="hall-submit" class="primary-button" type="submit">Enter the Hall</button>
+                  <button id="hall-view-after-submit" class="secondary-button" type="button" hidden>View Hall of Legends</button>
+                </div>
+              </form>
+            </section>
             <div id="battle-report-summary" class="battle-report-summary"></div>
             <div class="battle-report-table-wrap">
               <table class="battle-report-table">
@@ -522,6 +561,33 @@
               </article>
             </section>
 
+            <section class="longhouse-page hall-page" data-longhouse-content="hall" hidden>
+              <div class="hall-intro">
+                <div>
+                  <p class="eyebrow">Forty names. One very competitive skald.</p>
+                  <h3>The Hall of Legends</h3>
+                  <p>Defeat three Expert computer chiefs with one human faction, Saga Cards every two turns and Winter Is Coming enabled. Fewer completed faction turns rank higher; equal scores are ordered by the earliest submission.</p>
+                </div>
+                <span class="hall-shield" aria-hidden="true">♜</span>
+              </div>
+              <p id="hall-list-status" class="hall-list-status" role="status">The skald is unrolling the honour scroll…</p>
+              <div class="hall-table-wrap">
+                <table class="hall-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Rank</th>
+                      <th scope="col">Initials</th>
+                      <th scope="col">Nation</th>
+                      <th scope="col">Victorious chief</th>
+                      <th scope="col">Turns</th>
+                      <th scope="col">Recorded</th>
+                    </tr>
+                  </thead>
+                  <tbody id="hall-list"></tbody>
+                </table>
+              </div>
+            </section>
+
             <section class="longhouse-page feedback-page" data-longhouse-content="feedback" hidden>
               <div class="feedback-intro">
                 <h3>Send word by raven</h3>
@@ -570,7 +636,7 @@
             <section class="longhouse-page privacy-page" data-longhouse-content="privacy" hidden>
               <article class="acknowledgement-panel privacy-panel">
                 <h3>Privacy Notice</h3>
-                <p><strong>Last updated: 9 November 2026.</strong> Viking Raiderz is a small independent game. It does not require an account, collect in-game profiles, use advertising cookies, or run visitor analytics.</p>
+                <p><strong>Last updated: 18 November 2026.</strong> Viking Raiderz is a small independent game. It does not require an account, collect in-game profiles, use advertising cookies, or run visitor analytics.</p>
               </article>
               <article class="acknowledgement-panel privacy-panel">
                 <h3>Feedback you choose to send</h3>
@@ -578,12 +644,17 @@
                 <p>Feedback is processed by <a href="https://web3forms.com/privacy" target="_blank" rel="noreferrer">Web3Forms</a> and delivered to the game owner’s private Google inbox. Cloudflare hosts this website. These providers may process technical information needed to operate their services, such as IP addresses and browser details.</p>
               </article>
               <article class="acknowledgement-panel privacy-panel">
+                <h3>Hall of Legends entries</h3>
+                <p>If you voluntarily enter the Hall of Legends, your three initials, selected three-letter country code, winning chief, completed faction-turn score, and UTC submission time become publicly visible. Do not use initials that you consider private.</p>
+                <p>Cloudflare D1 stores the best forty entries. Cloudflare Turnstile checks that a submission is being made by a person. To limit spam, a one-way shortened hash derived from the connecting address is retained for up to 24 hours; the address itself is not stored in the Hall database.</p>
+              </article>
+              <article class="acknowledgement-panel privacy-panel">
                 <h3>How long it is kept</h3>
                 <p>Feedback is kept only for as long as it is reasonably useful for replying, improving the game, or resolving an issue. You can ask for your message to be deleted at any time.</p>
               </article>
               <article class="acknowledgement-panel privacy-panel">
                 <h3>Your choices</h3>
-                <p>You can request access to, correction of, or deletion of feedback you have sent. Contact <a href="mailto:hello@vikingraiderz.co.uk">hello@vikingraiderz.co.uk</a> and include enough detail for the message to be found.</p>
+                <p>You can request access to, correction of, or deletion of feedback or a Hall of Legends entry. Contact <a href="mailto:hello@vikingraiderz.co.uk">hello@vikingraiderz.co.uk</a> and include enough detail for the record to be found.</p>
                 <p>The optional Buy me a Mead link opens an external service. Its own privacy policy applies once you choose to use it.</p>
               </article>
             </section>

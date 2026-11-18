@@ -15,6 +15,6 @@
     "strict": true,
     "noUncheckedIndexedAccess": true
   },
-  "include": ["src", "tests", "benchmark", "vite.config.ts"]
+  "include": ["src", "tests", "benchmark", "functions", "vite.config.ts"]
 }
 
