@@ -164,7 +164,11 @@ main {
 }
 
 .setup-copy {
-  max-width: 650px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(17rem, 0.75fr);
+  gap: clamp(1.25rem, 3vw, 2.5rem);
+  align-items: end;
+  max-width: none;
 }
 
 .setup-copy h2 {
@@ -198,7 +202,7 @@ main {
 
 .browser-feature-actions {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr;
   gap: 0.75rem;
 }
 
@@ -213,28 +217,54 @@ main {
   background: linear-gradient(145deg, #fff5cb, #e9c46f);
 }
 
-.legend-challenge-note {
-  display: flex;
-  align-items: center;
-  gap: 0.7rem;
+.legend-challenge-panel {
+  display: grid;
+  gap: 0.8rem;
+  align-self: stretch;
+  align-content: center;
   margin: 0;
-  padding: 0.7rem 0.85rem;
-  border-left: 4px solid #b87921;
-  border-radius: 0 9px 9px 0;
+  padding: 1rem;
+  border: 1px solid rgba(132, 83, 21, 0.34);
+  border-top: 4px solid #b87921;
+  border-radius: 14px;
   color: #40575d;
-  background: rgba(255, 246, 210, 0.72);
+  background: rgba(255, 249, 222, 0.86);
+  box-shadow: 0 8px 22px rgba(59, 78, 68, 0.12);
   font-size: 0.88rem;
   line-height: 1.42;
 }
 
-.legend-challenge-note > span:first-child {
-  flex: 0 0 auto;
-  color: #9b4c28;
-  font-size: 1.45rem;
+.legend-challenge-panel > div {
+  text-align: center;
 }
 
-.legend-challenge-note strong {
+.legend-challenge-panel h3,
+.legend-challenge-panel p {
+  margin: 0;
+}
+
+.legend-challenge-panel h3 {
   color: #19394a;
+  font-family: "Almendra", Georgia, serif;
+  font-size: 1.55rem;
+}
+
+.legend-challenge-panel p:not(.eyebrow) {
+  margin-top: 0.4rem;
+}
+
+.legend-challenge-emblem {
+  display: grid;
+  width: 3.1rem;
+  height: 3.1rem;
+  margin: 0 auto;
+  place-items: center;
+  border: 2px solid #9b4c28;
+  border-radius: 50%;
+  color: #9b4c28;
+  background: rgba(255, 246, 210, 0.9);
+  box-shadow: inset 0 0 0 4px rgba(219, 165, 58, 0.22);
+  font-size: 1.55rem;
 }
 
 #event-continue {
@@ -2428,6 +2458,10 @@ main {
 }
 
 @media (max-width: 760px) {
+  .setup-copy {
+    grid-template-columns: 1fr;
+  }
+
   .browser-feature-actions {
     width: 100%;
   }
@@ -2620,10 +2654,6 @@ main {
 }
 
 @media (max-width: 460px) {
-  .browser-feature-actions {
-    grid-template-columns: 1fr;
-  }
-
   .longhouse-links {
     grid-template-columns: 1fr;
   }
